@@ -140,6 +140,7 @@ export const ACTION_DEFINITIONS: Record<string, string[]> = {
 	say: ["content"],
 	faction: ["content"],
 	msg: ["target_id", "content"],
+	create_faction: ["name", "tag"],
 	status: [],
 	system: [],
 	poi: [],

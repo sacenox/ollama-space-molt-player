@@ -135,6 +135,27 @@ function shouldStopForMaxTicks(allowFallbackCount: boolean): boolean {
 	return fallbackTickCount >= config.maxTicks;
 }
 
+function getActionStamp(): number {
+	const tick = client.state.currentTick;
+	if (typeof tick === "number" && Number.isFinite(tick)) return tick;
+	return Date.now();
+}
+
+function getForumFollowUpStatus(): "unread" | "periodic" | null {
+	const hasPostInfo = Boolean(
+		gameState.lastForumThreadId ||
+			gameState.lastForumPostTitle ||
+			gameState.lastForumPostCategory,
+	);
+	if (!hasPostInfo) return null;
+	const postAt = gameState.lastForumPostAt;
+	const readAt = gameState.lastForumThreadReadAt;
+	if (postAt !== null && (readAt === null || readAt < postAt)) {
+		return "unread";
+	}
+	return "periodic";
+}
+
 function saveSnapshot(): void {
 	memory.saveSnapshot({
 		tick: client.state.currentTick,
@@ -234,6 +255,10 @@ async function startActionLoop(): Promise<void> {
 				alignment: gameState.credentials?.alignment,
 				personality: gameState.credentials?.personality,
 				speechStyle: gameState.credentials?.speech_style,
+				lastForumThreadId: gameState.lastForumThreadId,
+				lastForumPostTitle: gameState.lastForumPostTitle,
+				lastForumPostCategory: gameState.lastForumPostCategory,
+				forumFollowUpStatus: getForumFollowUpStatus(),
 				repetitionWarning,
 			});
 
@@ -279,6 +304,22 @@ async function startActionLoop(): Promise<void> {
 
 			const actionName = validation.action.action;
 			const goal = validation.action.goal ?? null;
+			const actionStamp = getActionStamp();
+			if (actionName === "forum_post") {
+				const title = String(validation.action.args?.title ?? "").trim();
+				const category = String(validation.action.args?.category ?? "").trim();
+				gameState.lastForumPostTitle = title || null;
+				gameState.lastForumPostCategory = category || null;
+				gameState.lastForumPostAt = actionStamp;
+				gameState.lastForumThreadId = null;
+				gameState.lastForumThreadReadAt = null;
+			}
+			if (actionName === "forum_thread") {
+				const threadId = String(validation.action.args?.thread_id ?? "").trim();
+				if (threadId && threadId === gameState.lastForumThreadId) {
+					gameState.lastForumThreadReadAt = actionStamp;
+				}
+			}
 			if (client.state.player?.username && goal) {
 				gameState.currentGoal = goal;
 				memory.setGoal(client.state.player.username, goal);
@@ -576,6 +617,15 @@ client.on("ok", (data: Record<string, unknown>) => {
 	updateWorldSnapshotFromOk(data);
 
 	const action = typeof data.action === "string" ? data.action : null;
+	if (action === "forum_create_thread" || action === "forum_post") {
+		output.logDebug("FORUM_CREATE_OK", JSON.stringify(data, null, 2));
+		const threadId = String(
+			(data as { thread_id?: unknown }).thread_id ?? "",
+		).trim();
+		if (threadId) {
+			gameState.lastForumThreadId = threadId;
+		}
+	}
 	if (action === "travel") {
 		gameState.travelInProgress = true;
 	}

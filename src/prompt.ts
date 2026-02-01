@@ -18,6 +18,10 @@ export interface PromptContext {
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
 	speechStyle?: SpeechStyleType;
+	lastForumThreadId?: string | null;
+	lastForumPostTitle?: string | null;
+	lastForumPostCategory?: string | null;
+	forumFollowUpStatus?: "unread" | "periodic" | null;
 	repetitionWarning?: {
 		action: string;
 		count: number;
@@ -175,6 +179,7 @@ Chat:
   say <message>                 - Send local chat
   faction <message>             - Send faction chat
   msg <player_id> <message>     - Send private message
+  create_faction <name> <tag>   - Create a faction
 
 Forum:
   forum [page] [category]       - List forum threads (categories: general, bugs, suggestions, trading, factions)
@@ -191,6 +196,8 @@ export function buildActionPrompt(context: PromptContext): string {
 	const stateText = formatState(context.state);
 	const worldText = formatWorldSnapshot(context.state, context.worldSnapshot);
 	const memoryText = formatGroupedMemory(context.recentHistory);
+	const forumFollowUpBlock = formatForumFollowUp(context);
+	const forumContextBlock = formatForumContext(context.recentHistory);
 	const helpBlock = `\nHELP MENU:\n${HELP_TEXT}`;
 	const goalText = context.currentGoal?.trim()
 		? context.currentGoal.trim()
@@ -255,11 +262,15 @@ ${stateText}
 WORLD SNAPSHOT:
 ${worldText}
 
-RECENT MEMORY:
-${memoryText}
+ RECENT MEMORY:
+ ${memoryText}
 
-ACTION SCHEMA (JSON ONLY):
- {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
+${forumFollowUpBlock}
+
+${forumContextBlock}
+ 
+ ACTION SCHEMA (JSON ONLY):
+  {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -270,10 +281,11 @@ REQUIRED ARGS:
 - sell: {"item_id":"...","quantity":number}
 - craft: {"recipe_id":"..."}
 - chat: {"channel":"local|faction|private","content":"...","target_id":"..." if channel is private}
-- say: {"content":"..."}
-- faction: {"content":"..."}
-- msg: {"target_id":"...","content":"..."}
-- forum: {"page":number,"category":"general|bugs|suggestions|trading|factions"} (both optional)
+ - say: {"content":"..."}
+ - faction: {"content":"..."}
+ - msg: {"target_id":"...","content":"..."}
+ - create_faction: {"name":"...","tag":"..."}
+ - forum: {"page":number,"category":"general|bugs|suggestions|trading|factions"} (both optional)
 - forum_thread: {"thread_id":"..."}
 - forum_post: {"category":"...","title":"...","content":"..."}
 - forum_reply: {"thread_id":"...","content":"..."}
@@ -306,20 +318,15 @@ GAMEPLAY HEURISTIC (use as a tie-breaker):
 - Have POI list: travel to unexplored POIs
 - Current system exhausted: jump to connected system
 
-INTERACTION GUIDELINES:
-- Be respectful but competitive play is encouraged (attacking, boasting, complaining is fine)
-- Stay in character with your personality archetype and empire
-- Avoid spam - don't repeat identical messages rapidly
-- Keep messages concise and game-relevant
+ INTERACTION GUIDELINES:
+ - Be respectful but competitive play is encouraged (attacking, boasting, complaining is fine)
+ - Stay in character with your personality archetype and empire
+ - Avoid spam - don't repeat identical messages rapidly
+ - If you want to use faction chat but you are not in a faction, create one first
+ - After creating a forum thread, read it immediately and revisit it occasionally when idle
+ - Keep messages concise and game-relevant
 - If unsure what to say, stay silent rather than post nonsense
 - You're an AI agent - play authentically but don't explicitly announce you're AI unless asked
-
-EXAMPLES (valid JSON only):
- {"goal":"Check my status","action":"status"}
-{"goal":"Mine some ore","action":"mine"}
-{"goal":"Travel to a trade hub","action":"travel","args":{"target_poi":"poi_id_here"}}
-{"goal":"Sell off iron ore","action":"sell","args":{"item_id":"ore_iron","quantity":10}}
-{"goal":"Greet nearby pilots","action":"chat","args":{"channel":"local","content":"Hello"}}
 `;
 }
 
@@ -439,6 +446,15 @@ function formatState(state: ClientState): string {
 	lines.push(
 		`Player: ${player.username} [${player.empire}] credits=${player.credits}`,
 	);
+	const factionId = player.faction_id ?? null;
+	const factionTag = player.clan_tag ?? null;
+	if (factionId || factionTag) {
+		lines.push(
+			`Faction: ${factionTag ?? "unknown"}${factionId ? ` (id=${factionId})` : ""}`,
+		);
+	} else {
+		lines.push("Faction: none");
+	}
 	lines.push(
 		`Location: ${system?.name ?? player.current_system} - ${poi?.name ?? player.current_poi}`,
 	);
@@ -649,6 +665,167 @@ function formatGroupedMemory(history: HistoryEntry[]): string {
 	}
 
 	return lines.join("\n");
+}
+
+function formatForumFollowUp(context: PromptContext): string {
+	const status = context.forumFollowUpStatus ?? null;
+	const threadId = context.lastForumThreadId?.trim() ?? "";
+	const title = context.lastForumPostTitle?.trim() ?? "";
+	const category = context.lastForumPostCategory?.trim() ?? "";
+
+	if (!status && !threadId && !title && !category) return "";
+
+	const lines: string[] = ["FORUM FOLLOW-UP:"];
+	if (status === "unread") {
+		lines.push(
+			`- You just created a forum thread. Read it now${threadId ? `: forum_thread ${threadId}` : "."}`,
+		);
+		if (!threadId) {
+			const catText = category ? ` in category "${category}"` : "";
+			const titleText = title ? ` titled "${title}"` : "";
+			lines.push(
+				`- If the thread id is unknown, list forums${catText} and open your thread${titleText}.`,
+			);
+		}
+	} else {
+		const idText = threadId ? ` (id=${threadId})` : "";
+		lines.push(
+			`- You have an active thread to monitor${idText}. Revisit it occasionally when idle, not every tick.`,
+		);
+		if (!threadId && (title || category)) {
+			const catText = category ? ` in category "${category}"` : "";
+			const titleText = title ? ` titled "${title}"` : "";
+			lines.push(
+				`- If the thread id is unknown, list forums${catText} and open your thread${titleText}.`,
+			);
+		}
+	}
+
+	return `\n${lines.join("\n")}\n`;
+}
+
+function formatForumContext(history: HistoryEntry[]): string {
+	if (history.length === 0) return "";
+
+	const lastForumCheck = findLastForumCheck(history);
+	const createdPosts = findRecentForumPosts(history, 3);
+	const repliedThreads = findRecentRepliedThreads(history, 3);
+
+	const lines: string[] = ["FORUM CONTEXT:"];
+	lines.push(`- Last forum check: ${formatForumCheckLine(lastForumCheck)}`);
+	lines.push("- Created posts (last 3):");
+	if (createdPosts.length === 0) {
+		lines.push("  (none)");
+	} else {
+		for (const post of createdPosts) {
+			const categoryText = post.category ? `[${post.category}] ` : "";
+			lines.push(
+				`  - ${categoryText}${post.title ?? "(untitled)"} (${post.ts})`,
+			);
+		}
+	}
+	lines.push("- Participated threads (last 3):");
+	if (repliedThreads.length === 0) {
+		lines.push("  (none)");
+	} else {
+		for (const thread of repliedThreads) {
+			lines.push(`  - ${thread.threadId} (${thread.ts})`);
+		}
+	}
+
+	return `\n${lines.join("\n")}\n`;
+}
+
+type ForumCheckInfo = {
+	ts: string;
+	relative: string;
+};
+
+type ForumPostInfo = {
+	ts: string;
+	category: string | null;
+	title: string | null;
+};
+
+type ForumThreadInfo = {
+	ts: string;
+	threadId: string;
+};
+
+function findLastForumCheck(history: HistoryEntry[]): ForumCheckInfo | null {
+	for (const entry of history) {
+		if (entry.kind !== "action" || entry.action !== "forum") continue;
+		const relative = formatRelativeTime(entry.ts);
+		return { ts: entry.ts, relative };
+	}
+	return null;
+}
+
+function findRecentForumPosts(
+	history: HistoryEntry[],
+	limit: number,
+): ForumPostInfo[] {
+	const posts: ForumPostInfo[] = [];
+	for (const entry of history) {
+		if (entry.kind !== "action" || entry.action !== "forum_post") continue;
+		const args = parseActionArgs(entry.args);
+		const category = typeof args?.category === "string" ? args.category : null;
+		const title = typeof args?.title === "string" ? args.title : null;
+		posts.push({ ts: entry.ts, category, title });
+		if (posts.length >= limit) break;
+	}
+	return posts;
+}
+
+function findRecentRepliedThreads(
+	history: HistoryEntry[],
+	limit: number,
+): ForumThreadInfo[] {
+	const threads: ForumThreadInfo[] = [];
+	const seen = new Set<string>();
+	for (const entry of history) {
+		if (entry.kind !== "action" || entry.action !== "forum_reply") continue;
+		const args = parseActionArgs(entry.args);
+		const threadId = typeof args?.thread_id === "string" ? args.thread_id : "";
+		if (!threadId || seen.has(threadId)) continue;
+		seen.add(threadId);
+		threads.push({ ts: entry.ts, threadId });
+		if (threads.length >= limit) break;
+	}
+	return threads;
+}
+
+function parseActionArgs(value: string | null): Record<string, unknown> | null {
+	if (!value) return null;
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (parsed && typeof parsed === "object") {
+			return parsed as Record<string, unknown>;
+		}
+	} catch {
+		return null;
+	}
+	return null;
+}
+
+function formatForumCheckLine(info: ForumCheckInfo | null): string {
+	if (!info) return "unknown";
+	return `${info.relative} (${info.ts})`;
+}
+
+function formatRelativeTime(ts: string): string {
+	const parsed = Date.parse(ts);
+	if (!Number.isFinite(parsed)) return "unknown";
+	const now = Date.now();
+	const diffMs = Math.max(0, now - parsed);
+	const seconds = Math.round(diffMs / 1000);
+	if (seconds < 60) return `${seconds}s ago`;
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.round(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.round(hours / 24);
+	return `${days}d ago`;
 }
 
 function extractErrorMessage(

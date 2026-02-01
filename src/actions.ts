@@ -89,6 +89,17 @@ export function validateAction(decision: unknown): {
 		}
 	}
 
+	if (action === "create_faction") {
+		const name = String(args.name ?? "").trim();
+		const tag = String(args.tag ?? "").trim();
+		if (!name) {
+			return { ok: false, error: "create_faction.name is required" };
+		}
+		if (!tag) {
+			return { ok: false, error: "create_faction.tag is required" };
+		}
+	}
+
 	if (action === "register") {
 		const username = String(args.username ?? "").trim();
 		const empire = String(args.empire ?? "").trim();
@@ -251,6 +262,12 @@ export function dispatchAction(
 		case "msg":
 			client.privateMessage(String(args.target_id), String(args.content));
 			return `msg ${String(args.target_id)}`;
+		case "create_faction": {
+			const name = String(args.name);
+			const tag = String(args.tag);
+			client.createFaction(name, tag);
+			return `create faction ${name} [${tag}]`;
+		}
 		case "status":
 			client.getStatus();
 			return "get status";

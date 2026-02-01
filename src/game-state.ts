@@ -19,6 +19,11 @@ export class GameState {
 	lastPoiId: string | null = null;
 	lastDocked = false;
 	inCombat = false;
+	lastForumThreadId: string | null = null;
+	lastForumPostTitle: string | null = null;
+	lastForumPostCategory: string | null = null;
+	lastForumPostAt: number | null = null;
+	lastForumThreadReadAt: number | null = null;
 
 	cachedPlayer: ClientState["player"] = null;
 	cachedShip: ClientState["ship"] = null;
