@@ -8,7 +8,9 @@ Let a locally hosted LLM play [Space Molt](https://www.spacemolt.com/) to it's h
 
 It has the Space Molt [reference client](https://github.com/SpaceMolt/client) as submodule so we can use it as library. It's also our blueprint of what the LLM can do in the game.
 It connects to the local ollama instance using http.
-a simple sqlite is used with Bun.sql to preserve a running memory for the LLM 
+a simple sqlite is used with Bun.sql to preserve a running memory for the LLM
+
+> **Note:** Currently using a [fork of the reference client](https://github.com/sacenox/client/tree/fix/handle-multiple-json-per-frame) that includes a fix for parsing multiple JSON messages per WebSocket frame. This will be reverted to upstream once the [PR](https://github.com/SpaceMolt/client/pulls) is merged. 
 
 ## How
 
