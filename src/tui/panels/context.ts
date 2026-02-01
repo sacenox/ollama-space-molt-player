@@ -1,4 +1,4 @@
-// Context panel - warnings and forum status (prompt-only data not shown elsewhere)
+// Context panel - warnings, memory summary, and forum status
 
 import { applyBold, applyColor, COLORS } from "../colors";
 import type { TuiContext } from "../index";
@@ -28,6 +28,30 @@ export function renderContextPanel(context: TuiContext | undefined): string {
 	}
 
 	if (!hasWarnings) {
+		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
+	}
+
+	lines.push("");
+
+	// Memory summary section
+	lines.push(applyColor(applyBold("== Memory =="), COLORS.PANEL_TITLE));
+	const memorySummary = context?.memorySummary?.trim();
+	if (memorySummary) {
+		lines.push(...memorySummary.split("\n"));
+	} else {
+		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
+	}
+
+	lines.push("");
+
+	// Last action result section
+	lines.push(
+		applyColor(applyBold("== Last Action Result =="), COLORS.PANEL_TITLE),
+	);
+	const lastActionResult = context?.lastActionResult?.trim();
+	if (lastActionResult) {
+		lines.push(...lastActionResult.split("\n"));
+	} else {
 		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
 	}
 

@@ -35,6 +35,8 @@ export class GameState {
 
 	// TUI context (warnings + forum) - updated during action loop
 	tuiContext: TuiContext = {};
+	pendingActionId: number | null = null;
+	pendingActionTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	readonly MAX_REGISTRATION_RETRIES = 3;
 }

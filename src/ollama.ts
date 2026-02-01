@@ -83,6 +83,46 @@ export class OllamaAgent {
 			clearTimeout(timeout);
 		}
 	}
+
+	async generateText(prompt: string): Promise<string> {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+		try {
+			const requestBody: Record<string, unknown> = {
+				model: this.model,
+				prompt,
+				stream: false,
+				options: {
+					temperature: 0.1,
+				},
+			};
+
+			const response = await fetch(new URL("/api/generate", this.baseUrl), {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(requestBody),
+				signal: controller.signal,
+			});
+
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(`Ollama error ${response.status}: ${text}`);
+			}
+
+			const data = (await response.json()) as { response?: string };
+			return (data.response ?? "").trim();
+		} catch (error) {
+			if (error instanceof DOMException && error.name === "AbortError") {
+				throw new OllamaTimeoutError(this.timeoutMs);
+			}
+			throw error;
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
 }
 
 function parseJsonFromText<T>(text: string): T {

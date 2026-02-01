@@ -6,13 +6,14 @@ import {
 	PERSONALITY_ARCHETYPES,
 	SPEECH_STYLE_DESCRIPTIONS,
 } from "./constants";
-import type { HistoryEntry } from "./memory";
+import type { HistoryEntry, MemoryStore } from "./memory";
 import type { AlignmentType, PersonalityType, SpeechStyleType } from "./types";
 
 export interface PromptContext {
 	state: ClientState;
 	worldSnapshot?: WorldSnapshot;
 	recentHistory: HistoryEntry[];
+	memorySummary?: string | null;
 	currentGoal: string | null;
 	empire?: EmpireID;
 	alignment?: AlignmentType;
@@ -26,6 +27,7 @@ export interface PromptContext {
 		action: string;
 		count: number;
 	} | null;
+	lastActionResult?: string | null;
 }
 
 export interface WorldSnapshot {
@@ -202,7 +204,12 @@ Other:
 export function buildActionPrompt(context: PromptContext): string {
 	const stateText = formatState(context.state);
 	const worldText = formatWorldSnapshot(context.state, context.worldSnapshot);
-	const memoryText = formatGroupedMemory(context.recentHistory);
+	const memoryText = context.memorySummary?.trim()
+		? context.memorySummary.trim()
+		: "(summary unavailable)";
+	const lastActionText = context.lastActionResult?.trim()
+		? context.lastActionResult.trim()
+		: "No actions yet.";
 	const forumContextBlock = formatForumContext(context.recentHistory);
 	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
 	const goalText = context.currentGoal?.trim()
@@ -266,8 +273,11 @@ ${stateText}
 WORLD INFORMATION:
 ${worldText}
 
- RECENT MEMORY:
- ${memoryText}
+MEMORY SUMMARY:
+${memoryText}
+
+LAST ACTION RESULT:
+${lastActionText}
 
 ${forumContextBlock}
  
@@ -587,20 +597,39 @@ function formatWorldSnapshot(
 	return lines.join("\n");
 }
 
-function formatGroupedMemory(history: HistoryEntry[]): string {
-	if (history.length === 0) return "(no recent memory)";
+export function buildSummaryPrompt(history: HistoryEntry[]): string {
+	if (history.length === 0) {
+		return "Summarize the following game history: (empty history)\n\nProvide ONLY the text: No recent activity.";
+	}
 
-	const systemEvents: Extract<HistoryEntry, { kind: "event" }>[] = [];
-	const blocks: {
-		action: Extract<HistoryEntry, { kind: "action" }>;
-		events: Extract<HistoryEntry, { kind: "event" }>[];
-	}[] = [];
-	let currentBlock: (typeof blocks)[number] | null = null;
+	const historyText = formatHistoryForSummary(history);
+
+	return `You are summarizing recent game events for a SpaceMolt AI agent. The agent needs a concise description (NOT bullet points) of what happened recently to maintain context.
+
+Focus on:
+- Movement (travel, jumps, arrivals)
+- Economy (mining, trading, refueling, repairs)
+- Combat (attacks, scans)
+- Social (chat, forum posts, faction activity)
+- Errors or failures
+- Too much repetition (as a bad thing)
+
+Write 2-4 sentences describing the most important recent events. Be concise and descriptive.
+Write as if you were remembering your last steps. Write in the first person.
+
+RECENT HISTORY:
+${historyText}
+
+Provide ONLY the summary text. No extra formatting, no bullet points, no labels.`;
+}
+
+function formatHistoryForSummary(history: HistoryEntry[]): string {
+	const lines: string[] = [];
 
 	for (const entry of history) {
 		if (entry.kind === "action") {
-			currentBlock = { action: entry, events: [] };
-			blocks.push(currentBlock);
+			const argsText = formatActionArgs(entry.args);
+			lines.push(`${entry.ts} ACTION: ${entry.action}${argsText}`.trim());
 			continue;
 		}
 
@@ -608,49 +637,178 @@ function formatGroupedMemory(history: HistoryEntry[]): string {
 			continue;
 		}
 
-		if (currentBlock) {
-			currentBlock.events.push(entry);
+		const summary = summarizeEvent(entry);
+		if (summary) {
+			lines.push(`${entry.ts} EVENT: ${entry.type} ${summary}`.trim());
 		} else {
-			systemEvents.push(entry);
+			lines.push(`${entry.ts} EVENT: ${entry.type}`.trim());
 		}
 	}
 
-	const lines: string[] = [];
-	if (systemEvents.length > 0) {
-		lines.push("System events:");
-		for (const event of systemEvents) {
-			lines.push(formatEventLine(event));
-		}
+	return lines.join("\n");
+}
+
+export function buildLastActionResult(memory: MemoryStore): string {
+	const lastAction = memory.getLastActionWithResults();
+	if (!lastAction) return "No actions yet.";
+
+	const argsText = formatActionArgs(lastAction.action.args);
+	const header =
+		`Action: ${lastAction.action.ts} ${lastAction.action.action}${argsText}`.trim();
+
+	if (lastAction.results.length === 0) {
+		return `${header}\nResult: No response received (timeout or pending).`;
 	}
 
-	for (const block of blocks) {
-		const argsText = formatActionArgs(block.action.args);
-		const errorEvent = block.events.find(
-			(e) => e.type === "error" || e.type === "llm_invalid_action",
-		);
-		const errorMsg = errorEvent ? extractErrorMessage(errorEvent) : null;
+	const lines: string[] = [header, "Result:"];
+	let appended = false;
 
-		if (errorMsg) {
-			lines.push(
-				`Action: ${block.action.ts} ${block.action.action}${argsText} -> FAILED: ${errorMsg}`.trim(),
-			);
-		} else {
-			lines.push(
-				`Action: ${block.action.ts} ${block.action.action}${argsText}`.trim(),
-			);
-		}
+	for (const result of lastAction.results) {
+		const payload = parseJson(result.payload ?? "");
+		if (!payload || typeof payload !== "object") continue;
 
-		// Filter out error events that were inlined above
-		const nonErrorEvents = block.events.filter(
-			(e) => e.type !== "error" && e.type !== "llm_invalid_action",
-		);
-		if (nonErrorEvents.length === 0 && !errorMsg) {
-			lines.push("- Event: none");
-		} else {
-			for (const event of nonErrorEvents) {
-				lines.push(formatEventLine(event));
+		if (result.result_type === "forum_list") {
+			const forumLines = formatForumList(payload as Record<string, unknown>);
+			if (forumLines.length > 0) {
+				lines.push(...forumLines.map((line) => `- ${line}`));
+				appended = true;
 			}
+			continue;
 		}
+		if (
+			result.result_type === "forum_thread" ||
+			result.result_type === "forum_get_thread"
+		) {
+			const forumLines = formatForumThread(payload as Record<string, unknown>);
+			if (forumLines.length > 0) {
+				lines.push(...forumLines.map((line) => `- ${line}`));
+				appended = true;
+			}
+			continue;
+		}
+		if (result.result_type === "error") {
+			const code = getStringField(payload, "code") ?? "unknown";
+			const message = getStringField(payload, "message") ?? "Unknown error";
+			lines.push(`- ERROR [${code}]: ${message}`);
+			appended = true;
+			continue;
+		}
+		if (result.result_type === "ok") {
+			const okAction = getStringField(payload, "action");
+			if (!okAction) {
+				const lastActionName = lastAction.action.action;
+				const infoLines: string[] = [];
+				if (
+					lastActionName === "base" ||
+					getObjectField(payload, "base") !== null
+				) {
+					infoLines.push("- Base information updated");
+				}
+				if (
+					lastActionName === "poi" ||
+					getObjectField(payload, "poi") !== null
+				) {
+					infoLines.push("- POI information updated");
+				}
+				if (
+					lastActionName === "system" ||
+					getObjectField(payload, "system") !== null
+				) {
+					infoLines.push("- System information updated");
+				}
+				if (
+					lastActionName === "status" ||
+					getObjectField(payload, "player") !== null
+				) {
+					infoLines.push("- Status information updated");
+				}
+				if (
+					lastActionName === "cargo" ||
+					Array.isArray((payload as Record<string, unknown>).cargo)
+				) {
+					infoLines.push("- Cargo information updated");
+				}
+				if (
+					lastActionName === "nearby" ||
+					Array.isArray((payload as Record<string, unknown>).nearby)
+				) {
+					infoLines.push("- Nearby players information updated");
+				}
+				if (infoLines.length > 0) {
+					lines.push(...infoLines);
+					appended = true;
+					continue;
+				}
+			}
+			if (okAction === "base") {
+				lines.push("- Base information updated");
+				appended = true;
+				continue;
+			}
+			if (okAction === "status") {
+				lines.push("- Status information updated");
+				appended = true;
+				continue;
+			}
+			if (okAction === "system") {
+				lines.push("- System information updated");
+				appended = true;
+				continue;
+			}
+			if (okAction === "poi") {
+				lines.push("- POI information updated");
+				appended = true;
+				continue;
+			}
+			if (okAction === "cargo") {
+				lines.push("- Cargo information updated");
+				appended = true;
+				continue;
+			}
+			if (okAction === "nearby") {
+				lines.push("- Nearby players information updated");
+				appended = true;
+				continue;
+			}
+			const summary = summarizeOkPayload(payload as Record<string, unknown>);
+			if (summary) {
+				lines.push(`- ${summary.text}`);
+				appended = true;
+			}
+			continue;
+		}
+		if (result.result_type === "scan_result") {
+			const target = getStringField(payload, "target_id") ?? "unknown";
+			const success = (payload as Record<string, unknown>).success === true;
+			const info = Array.isArray(
+				(payload as Record<string, unknown>).revealed_info,
+			)
+				? ((payload as Record<string, unknown>).revealed_info as unknown[])
+						.map(String)
+						.join(", ")
+				: null;
+			const details = info ? `: ${truncateText(info, 120)}` : "";
+			lines.push(
+				`- Scan ${success ? "successful" : "failed"} on ${target}${details}`,
+			);
+			appended = true;
+			continue;
+		}
+		if (result.result_type === "mining_yield") {
+			const resource = getStringField(payload, "resource_id") ?? "ore";
+			const quantity = Number(
+				(payload as Record<string, unknown>).quantity ?? 0,
+			);
+			lines.push(`- Mined ${quantity}x ${resource}`);
+			appended = true;
+			continue;
+		}
+		lines.push(`- ${result.result_type} received`);
+		appended = true;
+	}
+
+	if (!appended) {
+		lines.push("- No readable result payload.");
 	}
 
 	return lines.join("\n");
@@ -686,6 +844,198 @@ function formatForumContext(history: HistoryEntry[]): string {
 	}
 
 	return `\n${lines.join("\n")}\n`;
+}
+
+type OkSummary = {
+	category: "movement" | "economy" | "combat" | "info";
+	text: string;
+};
+
+function summarizeOkPayload(
+	payload: Record<string, unknown>,
+): OkSummary | null {
+	const action = String(payload.action ?? "");
+	if (!action) return null;
+
+	switch (action) {
+		case "travel": {
+			const target = String(payload.target_poi ?? "unknown");
+			return { category: "movement", text: `Traveling to ${target}` };
+		}
+		case "arrived": {
+			const poiId = String(payload.poi_id ?? "destination");
+			return { category: "movement", text: `Arrived at ${poiId}` };
+		}
+		case "jump": {
+			const target = String(payload.target_system ?? "unknown");
+			return { category: "movement", text: `Jumping to ${target}` };
+		}
+		case "jumped": {
+			const systemId = String(payload.system_id ?? "new system");
+			return { category: "movement", text: `Jumped to ${systemId}` };
+		}
+		case "dock": {
+			const baseId = String(payload.base_id ?? "base");
+			return { category: "movement", text: `Docked at ${baseId}` };
+		}
+		case "undock": {
+			return { category: "movement", text: "Undocked" };
+		}
+		case "mine": {
+			const resource = String(payload.resource ?? "ore");
+			const quantity = Number(payload.quantity ?? 0);
+			return {
+				category: "economy",
+				text: `Mined ${quantity > 0 ? `${quantity}x ` : ""}${resource}`,
+			};
+		}
+		case "buy": {
+			const itemId = String(payload.item_id ?? "item");
+			const quantity = Number(payload.quantity ?? 0);
+			const cost = Number(payload.cost ?? 0);
+			return {
+				category: "economy",
+				text: `Bought ${quantity}x ${itemId} for ${cost} credits`,
+			};
+		}
+		case "sell": {
+			const itemId = String(payload.item_id ?? "item");
+			const quantity = Number(payload.quantity ?? 0);
+			const revenue = Number(payload.revenue ?? 0);
+			return {
+				category: "economy",
+				text: `Sold ${quantity}x ${itemId} for ${revenue} credits`,
+			};
+		}
+		case "repair": {
+			const cost = Number(payload.cost ?? 0);
+			return {
+				category: "economy",
+				text: `Repaired ship (cost: ${cost} credits)`,
+			};
+		}
+		case "refuel": {
+			const cost = Number(payload.cost ?? 0);
+			return {
+				category: "economy",
+				text: `Refueled ship (cost: ${cost} credits)`,
+			};
+		}
+		case "attack": {
+			const targetId = String(payload.target_id ?? "target");
+			const damage = Number(payload.damage ?? 0);
+			return {
+				category: "combat",
+				text: `Attacked ${targetId}${damage > 0 ? ` (${damage} damage)` : ""}`,
+			};
+		}
+		default:
+			return {
+				category: "info",
+				text: `OK: ${action}`,
+			};
+	}
+}
+
+function formatForumList(payload: Record<string, unknown>): string[] {
+	const threads = findArrayField(payload, [
+		"threads",
+		"items",
+		"results",
+		"posts",
+	]);
+	if (!threads || threads.length === 0) return ["Forum list received"];
+
+	const lines: string[] = ["Forum list:"];
+	for (const item of threads.slice(0, 5)) {
+		if (!item || typeof item !== "object") continue;
+		const record = item as Record<string, unknown>;
+		const id =
+			getStringField(record, "id") ?? getStringField(record, "thread_id");
+		const title =
+			getStringField(record, "title") ?? getStringField(record, "subject");
+		const category = getStringField(record, "category");
+		const author =
+			getStringField(record, "author") ?? getStringField(record, "username");
+		const replies =
+			getStringField(record, "reply_count") ??
+			getStringField(record, "replies");
+		const parts = [
+			category ? `[${category}]` : null,
+			title ? truncateText(title, 60) : "(untitled)",
+			id ? `(id=${id})` : null,
+			author ? `by ${author}` : null,
+			replies ? `replies=${replies}` : null,
+		].filter(Boolean);
+		if (parts.length > 0) lines.push(parts.join(" "));
+	}
+	return lines;
+}
+
+function formatForumThread(payload: Record<string, unknown>): string[] {
+	const thread = getObjectField(payload, "thread") ?? payload;
+	const threadTitle =
+		getStringField(thread, "title") ?? getStringField(thread, "subject");
+	const threadId =
+		getStringField(thread, "id") ?? getStringField(thread, "thread_id");
+	const category = getStringField(thread, "category");
+
+	const lines: string[] = [
+		`Forum thread: ${threadTitle ? truncateText(threadTitle, 60) : "(untitled)"}`,
+	];
+
+	const headerParts = [
+		threadId ? `id=${threadId}` : null,
+		category ? `category=${category}` : null,
+	].filter(Boolean);
+	if (headerParts.length > 0) {
+		lines[0] = `${lines[0]} (${headerParts.join(" ")})`;
+	}
+
+	const posts =
+		findArrayField(payload, ["posts", "replies", "messages"]) ??
+		findArrayField(thread, ["posts", "replies", "messages"]);
+	if (!posts || posts.length === 0) return lines;
+
+	lines.push("Posts:");
+	for (const post of posts.slice(0, 3)) {
+		if (!post || typeof post !== "object") continue;
+		const record = post as Record<string, unknown>;
+		const author =
+			getStringField(record, "author") ??
+			getStringField(record, "username") ??
+			getStringField(record, "sender");
+		const content =
+			getStringField(record, "content") ??
+			getStringField(record, "message") ??
+			getStringField(record, "body");
+		if (!content) continue;
+		lines.push(`${author ? `${author}: ` : ""}${truncateText(content, 140)}`);
+	}
+
+	return lines;
+}
+
+function findArrayField(
+	payload: Record<string, unknown>,
+	keys: string[],
+): unknown[] | null {
+	for (const key of keys) {
+		const value = payload[key];
+		if (Array.isArray(value)) return value;
+	}
+	return null;
+}
+
+function getObjectField(
+	payload: Record<string, unknown>,
+	key: string,
+): Record<string, unknown> | null {
+	const value = payload[key];
+	if (value && typeof value === "object" && !Array.isArray(value)) {
+		return value as Record<string, unknown>;
+	}
+	return null;
 }
 
 type ForumCheckInfo = {
@@ -778,35 +1128,6 @@ function formatRelativeTime(ts: string): string {
 	if (hours < 24) return `${hours}h ago`;
 	const days = Math.round(hours / 24);
 	return `${days}d ago`;
-}
-
-function extractErrorMessage(
-	event: Extract<HistoryEntry, { kind: "event" }>,
-): string | null {
-	if (!event.payload) return null;
-	const payload = parseJson(event.payload);
-	if (!payload || typeof payload !== "object") return null;
-
-	const message = getStringField(payload, "message");
-	if (message) return truncateText(message, 80);
-
-	const error = getStringField(payload, "error");
-	if (error) return truncateText(error, 80);
-
-	const code = getStringField(payload, "code");
-	if (code) return code;
-
-	return null;
-}
-
-function formatEventLine(
-	event: Extract<HistoryEntry, { kind: "event" }>,
-): string {
-	const summary = summarizeEvent(event);
-	if (summary) {
-		return `- Event: ${event.ts} ${event.type} ${summary}`.trim();
-	}
-	return `- Event: ${event.ts} ${event.type}`.trim();
 }
 
 function formatActionArgs(argsRaw: string | null): string {

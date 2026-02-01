@@ -16,7 +16,13 @@ import { OllamaAgent, OllamaTimeoutError } from "./ollama";
 import { FileLoggerOutput } from "./output/file-logger-output";
 import { TuiOutput } from "./output/tui-output";
 import type { OutputInterface } from "./output-interface";
-import { buildActionPrompt, isStranded, type WorldSnapshot } from "./prompt";
+import {
+	buildActionPrompt,
+	buildLastActionResult,
+	buildSummaryPrompt,
+	isStranded,
+	type WorldSnapshot,
+} from "./prompt";
 import { runRegistrationFlow } from "./registration";
 import {
 	formatAiAction,
@@ -119,6 +125,21 @@ function updateOutput(): void {
 		inCombat: gameState.inCombat,
 		context: gameState.tuiContext,
 	});
+}
+
+function captureActionResult(resultType: string, payload: unknown): void {
+	if (gameState.pendingActionId === null) return;
+	memory.appendActionResult(gameState.pendingActionId, resultType, payload);
+	if (resultType === "ok" || resultType === "error") {
+		if (gameState.pendingActionTimeout) {
+			clearTimeout(gameState.pendingActionTimeout);
+			gameState.pendingActionTimeout = null;
+		}
+	}
+	output.logDebug(
+		"ACTION_RESULT_CAPTURED",
+		`${resultType} linked to action ${gameState.pendingActionId}`,
+	);
 }
 
 function shouldStopForMaxTicks(allowFallbackCount: boolean): boolean {
@@ -242,6 +263,16 @@ async function startActionLoop(): Promise<void> {
 				config.maxContextActions,
 				config.maxContextEvents,
 			);
+			let memorySummary = "(summary unavailable)";
+			try {
+				const summaryPrompt = buildSummaryPrompt(recentHistory);
+				const summaryText = await ollama.generateText(summaryPrompt);
+				memorySummary = summaryText || "(summary unavailable)";
+			} catch (error) {
+				const message = (error as Error).message;
+				output.logDebug("SUMMARY_ERROR", message);
+			}
+			const lastActionResult = buildLastActionResult(memory);
 			const recentActions = memory.getRecentActions(REPETITION_THRESHOLD);
 			const repetitionWarning = detectRepetition(
 				recentActions,
@@ -262,6 +293,8 @@ async function startActionLoop(): Promise<void> {
 					lastPostTitle: gameState.lastForumPostTitle,
 					lastPostCategory: gameState.lastForumPostCategory,
 				},
+				memorySummary,
+				lastActionResult,
 			};
 			updateOutput();
 
@@ -269,6 +302,8 @@ async function startActionLoop(): Promise<void> {
 				state: client.state,
 				worldSnapshot: gameState.worldSnapshot,
 				recentHistory,
+				memorySummary,
+				lastActionResult,
 				currentGoal: gameState.currentGoal,
 				empire: client.state.player?.empire,
 				alignment: gameState.credentials?.alignment,
@@ -345,12 +380,34 @@ async function startActionLoop(): Promise<void> {
 				output.log(formatAiGoal(goal));
 				updateOutput();
 			}
-			memory.appendAction(
+			if (gameState.pendingActionId !== null) {
+				output.logDebug(
+					"ACTION_PENDING_OVERRIDDEN",
+					`Overriding pending action ${gameState.pendingActionId}`,
+				);
+				gameState.pendingActionId = null;
+			}
+			if (gameState.pendingActionTimeout) {
+				clearTimeout(gameState.pendingActionTimeout);
+				gameState.pendingActionTimeout = null;
+			}
+			const actionId = memory.appendActionWithId(
 				actionName,
 				validation.action.args ?? {},
 				promptExcerpt,
 				result.raw,
 			);
+			gameState.pendingActionId = actionId;
+			const pendingDelayMs = Math.max(3000, config.tickDelayMs * 2);
+			gameState.pendingActionTimeout = setTimeout(() => {
+				if (gameState.pendingActionId !== actionId) return;
+				output.logDebug(
+					"ACTION_TIMEOUT",
+					`No response for action ${actionId} after ${pendingDelayMs}ms`,
+				);
+				gameState.pendingActionId = null;
+				gameState.pendingActionTimeout = null;
+			}, pendingDelayMs);
 			if (actionName === "travel") {
 				gameState.lastTravelTarget =
 					String(validation.action.args?.target_poi ?? "").trim() || null;
@@ -402,7 +459,13 @@ process.on("SIGTERM", shutdown);
 
 // Log ALL raw messages for debugging server communication
 client.on("raw_message", (data: { type: string; payload: unknown }) => {
-	memory.appendEvent(`raw_${data.type}`, data.payload);
+	const rawType = String(data.type ?? "");
+	if (!rawType) return;
+	memory.appendEvent(`raw_${rawType}`, data.payload);
+	if (rawType.startsWith("forum_") || rawType === "mining_yield") {
+		captureActionResult(rawType, data.payload);
+		memory.appendEvent(rawType, data.payload);
+	}
 });
 
 client.on<WelcomePayload>("welcome", async (data) => {
@@ -504,6 +567,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 });
 
 client.on<ErrorPayload>("error", (data) => {
+	captureActionResult("error", data);
 	output.log(formatError(data));
 	memory.appendEvent("error", data);
 	if (data.code === "invalid_credentials") {
@@ -622,11 +686,13 @@ client.on<ChatMessage>("chat_message", (data) => {
 });
 
 client.on<ScanResultPayload>("scan_result", (data) => {
+	captureActionResult("scan_result", data);
 	output.log(formatScanResult(data));
 	memory.appendEvent("scan_result", data);
 });
 
 client.on("ok", (data: Record<string, unknown>) => {
+	captureActionResult("ok", data);
 	const okContext: OkContext = {
 		jumpTarget: gameState.lastJumpTarget,
 		travelTarget: gameState.lastTravelTarget,

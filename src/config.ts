@@ -151,7 +151,7 @@ export const config = {
 	uiLogPath: `ui-${instanceName}.log`,
 	debugLogPath: `debug-${instanceName}.log`,
 	tickDelayMs: 11000,
-	maxContextActions: 5,
-	maxContextEvents: 5,
+	maxContextActions: 20,
+	maxContextEvents: 40,
 	ollamaTimeoutMs: 60000,
 };

@@ -32,6 +32,12 @@ export interface StoredEvent {
 	payload: string | null;
 }
 
+export interface ActionResult {
+	ts: string;
+	result_type: string;
+	payload: string | null;
+}
+
 export type HistoryEntry =
 	| {
 			kind: "action";
@@ -65,6 +71,14 @@ export class MemoryStore {
         args TEXT,
         prompt_excerpt TEXT,
         model_raw TEXT
+      );
+      CREATE TABLE IF NOT EXISTS action_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action_id INTEGER NOT NULL,
+        ts TEXT NOT NULL,
+        result_type TEXT NOT NULL,
+        payload TEXT,
+        FOREIGN KEY (action_id) REFERENCES actions(id)
       );
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,6 +192,38 @@ export class MemoryStore {
 			);
 	}
 
+	appendActionWithId(
+		action: string,
+		args: unknown,
+		promptExcerpt: string,
+		modelRaw: string,
+	): number {
+		const result = this.db
+			.query(
+				"INSERT INTO actions (ts, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?)",
+			)
+			.run(
+				nowIso(),
+				action,
+				toJson(args),
+				truncate(promptExcerpt),
+				truncate(modelRaw),
+			);
+		return Number(result.lastInsertRowid);
+	}
+
+	appendActionResult(
+		actionId: number,
+		resultType: string,
+		payload: unknown,
+	): void {
+		this.db
+			.query(
+				"INSERT INTO action_results (action_id, ts, result_type, payload) VALUES (?, ?, ?, ?)",
+			)
+			.run(actionId, nowIso(), resultType, toJson(payload));
+	}
+
 	appendEvent(type: string, payload: unknown): void {
 		this.db
 			.query("INSERT INTO events (ts, type, payload) VALUES (?, ?, ?)")
@@ -257,6 +303,24 @@ export class MemoryStore {
 			return a.kind === "action" ? -1 : 1;
 		});
 		return combined;
+	}
+
+	getLastActionWithResults(): {
+		action: StoredAction;
+		results: ActionResult[];
+	} | null {
+		const action = this.db
+			.query(
+				"SELECT id, ts, action, args, prompt_excerpt, model_raw FROM actions ORDER BY id DESC LIMIT 1",
+			)
+			.get() as StoredAction | undefined;
+		if (!action) return null;
+		const results = this.db
+			.query(
+				"SELECT ts, result_type, payload FROM action_results WHERE action_id = ? ORDER BY id ASC",
+			)
+			.all(action.id) as ActionResult[];
+		return { action, results };
 	}
 }
 

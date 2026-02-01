@@ -11,14 +11,16 @@ export interface LayoutConfig {
 	leftWidth: number; // Width percentage for left sidebar
 	rightWidth: number; // Width percentage for right sidebar
 	leftTopHeightPercent: number; // Percent of left sidebar for top panel
+	leftMiddleHeightPercent: number; // Percent of left sidebar for middle panel
 	rightTopHeightPercent: number; // Percent of right sidebar for top panel
 }
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
 	leftWidth: 20, // 20% for left sidebar
 	rightWidth: 20, // 20% for right sidebar (center gets 60%)
-	leftTopHeightPercent: 40, // 40% of left sidebar for player/ship panel
-	rightTopHeightPercent: 40, // 40% of right sidebar for location panel
+	leftTopHeightPercent: 35, // 35% of left sidebar for player/ship panel
+	leftMiddleHeightPercent: 35, // 35% of left sidebar for world info panel
+	rightTopHeightPercent: 40, // 40% of right sidebar for tactical panel
 };
 
 export interface ComputedLayout {
@@ -58,29 +60,36 @@ export function computeLayout(
 	// Height for panels (reserve 1 line for status bar)
 	const availableHeight = termHeight - 1;
 
-	// Left sidebar split
+	// Left sidebar split into 3 panels: player/ship, world info, location
 	const leftTopHeight = Math.max(
 		MIN_PANEL_HEIGHT,
 		Math.floor((availableHeight * config.leftTopHeightPercent) / 100),
 	);
+	const leftMiddleHeight = Math.max(
+		MIN_PANEL_HEIGHT,
+		Math.floor((availableHeight * config.leftMiddleHeightPercent) / 100),
+	);
+	const leftTopAdjusted = Math.min(
+		leftTopHeight,
+		availableHeight - MIN_PANEL_HEIGHT * 2,
+	);
+	const leftMiddleAdjusted = Math.min(
+		leftMiddleHeight,
+		availableHeight - leftTopAdjusted - MIN_PANEL_HEIGHT,
+	);
 	const leftBottomHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		availableHeight - leftTopHeight,
+		availableHeight - leftTopAdjusted - leftMiddleAdjusted,
 	);
 
-	// Right sidebar split into 3 panels: location (40%), tactical (30%), context (30%)
+	// Right sidebar split into 2 panels: tactical (40%), context (60%)
 	const rightTopHeight = Math.max(
 		MIN_PANEL_HEIGHT,
 		Math.floor((availableHeight * config.rightTopHeightPercent) / 100),
 	);
-	const rightRemainingHeight = availableHeight - rightTopHeight;
-	const rightMiddleHeight = Math.max(
-		MIN_PANEL_HEIGHT,
-		Math.floor(rightRemainingHeight / 2),
-	);
 	const rightBottomHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		rightRemainingHeight - rightMiddleHeight,
+		availableHeight - rightTopHeight,
 	);
 
 	return {
@@ -88,13 +97,13 @@ export function computeLayout(
 			left: 0,
 			top: 0,
 			width: leftWidthAbs,
-			height: leftTopHeight,
+			height: leftTopAdjusted,
 		},
 		worldInfo: {
 			left: 0,
-			top: leftTopHeight,
+			top: leftTopAdjusted,
 			width: leftWidthAbs,
-			height: leftBottomHeight,
+			height: leftMiddleAdjusted,
 		},
 		log: {
 			left: leftWidthAbs,
@@ -103,20 +112,20 @@ export function computeLayout(
 			height: availableHeight,
 		},
 		location: {
+			left: 0,
+			top: leftTopAdjusted + leftMiddleAdjusted,
+			width: leftWidthAbs,
+			height: leftBottomHeight,
+		},
+		tactical: {
 			left: leftWidthAbs + centerWidthAbs,
 			top: 0,
 			width: rightWidthAbs,
 			height: rightTopHeight,
 		},
-		tactical: {
-			left: leftWidthAbs + centerWidthAbs,
-			top: rightTopHeight,
-			width: rightWidthAbs,
-			height: rightMiddleHeight,
-		},
 		context: {
 			left: leftWidthAbs + centerWidthAbs,
-			top: rightTopHeight + rightMiddleHeight,
+			top: rightTopHeight,
 			width: rightWidthAbs,
 			height: rightBottomHeight,
 		},

@@ -270,12 +270,18 @@ const mockForumFollowUpStatus: "unread" | "periodic" | null = "periodic";
 
 // Mock repetition warning (null = no warning)
 const mockRepetitionWarning: { action: string; count: number } | null = null;
+const mockMemorySummary =
+	"Recently traveled to the asteroid belt and mined resources while staying alert for nearby activity.";
+const mockLastActionResult =
+	"Action: 2025-01-01T00:00:00.000Z mine\nResult:\n- Mined 5x iron_ore";
 
 // Build the prompt exactly as we would in production
 const prompt = buildActionPrompt({
 	state: mockClientState,
 	worldSnapshot: mockWorldSnapshot,
 	recentHistory: mockRecentHistory,
+	memorySummary: mockMemorySummary,
+	lastActionResult: mockLastActionResult,
 	currentGoal:
 		"Map the Sol Prime system and gather resources for the journey to Alpha Centauri",
 	empire: mockPlayer.empire,

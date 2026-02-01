@@ -35,6 +35,8 @@ export interface ContextForum {
 export interface TuiContext {
 	warnings?: ContextWarnings;
 	forum?: ContextForum;
+	memorySummary?: string | null;
+	lastActionResult?: string | null;
 }
 
 export interface TuiUpdateData {
