@@ -95,6 +95,7 @@ export class FileLoggerOutput implements OutputInterface {
 		if (data.inCombat !== undefined) this.state.inCombat = data.inCombat;
 		if (data.combatTarget !== undefined)
 			this.state.combatTarget = data.combatTarget;
+		if (data.context !== undefined) this.state.context = data.context;
 	}
 
 	private logStateChanges(): void {

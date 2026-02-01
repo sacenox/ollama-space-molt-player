@@ -2,7 +2,7 @@ import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
 import { ACTION_DEFINITIONS, MAX_GOAL_LENGTH } from "./constants";
 import type { ActionDecision } from "./types";
-import { isValidEmpire, isValidPersonality } from "./utils";
+import { isValidEmpire } from "./utils";
 
 export { MAX_GOAL_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
 export type { ActionDecision, PersonalityType } from "./types";
@@ -56,8 +56,14 @@ export function validateAction(decision: unknown): {
 
 	if (action === "chat") {
 		const channel = String(args.channel ?? "");
-		if (!channel || !["local", "faction", "private"].includes(channel)) {
-			return { ok: false, error: "chat.channel must be local|faction|private" };
+		if (
+			!channel ||
+			!["local", "system", "faction", "private", "global"].includes(channel)
+		) {
+			return {
+				ok: false,
+				error: "chat.channel must be local|system|faction|private|global",
+			};
 		}
 		const content = String(args.content ?? "");
 		if (!content) {
@@ -103,7 +109,6 @@ export function validateAction(decision: unknown): {
 	if (action === "register") {
 		const username = String(args.username ?? "").trim();
 		const empire = String(args.empire ?? "").trim();
-		const personality = String(args.personality ?? "").trim();
 		if (!username) {
 			return { ok: false, error: "register.username is required" };
 		}
@@ -112,12 +117,6 @@ export function validateAction(decision: unknown): {
 		}
 		if (!isValidEmpire(empire)) {
 			return { ok: false, error: "register.empire is invalid" };
-		}
-		if (!personality) {
-			return { ok: false, error: "register.personality is required" };
-		}
-		if (!isValidPersonality(personality)) {
-			return { ok: false, error: "register.personality is invalid" };
 		}
 	}
 
@@ -187,6 +186,37 @@ export function validateAction(decision: unknown): {
 			return {
 				ok: false,
 				error: "forum_upvote requires thread_id or reply_id",
+			};
+		}
+	}
+
+	if (action === "set_status") {
+		const statusMessage = String(args.status_message ?? "").trim();
+		const clanTag = String(args.clan_tag ?? "").trim();
+		if (!statusMessage && !clanTag) {
+			return {
+				ok: false,
+				error: "set_status requires status_message or clan_tag",
+			};
+		}
+	}
+
+	if (action === "set_colors") {
+		const primaryColor = String(args.primary_color ?? "").trim();
+		const secondaryColor = String(args.secondary_color ?? "").trim();
+		if (!primaryColor) {
+			return { ok: false, error: "set_colors.primary_color is required" };
+		}
+		if (!secondaryColor) {
+			return { ok: false, error: "set_colors.secondary_color is required" };
+		}
+	}
+
+	if (action === "set_anonymous") {
+		if (typeof args.anonymous !== "boolean") {
+			return {
+				ok: false,
+				error: "set_anonymous.anonymous must be a boolean",
 			};
 		}
 	}
@@ -267,6 +297,23 @@ export function dispatchAction(
 			const tag = String(args.tag);
 			client.createFaction(name, tag);
 			return `create faction ${name} [${tag}]`;
+		}
+		case "set_status": {
+			const statusMessage = String(args.status_message ?? "");
+			const clanTag = String(args.clan_tag ?? "");
+			client.setStatus(statusMessage, clanTag);
+			return `set status "${statusMessage}" [${clanTag}]`;
+		}
+		case "set_colors": {
+			const primaryColor = String(args.primary_color);
+			const secondaryColor = String(args.secondary_color);
+			client.setColors(primaryColor, secondaryColor);
+			return `set colors ${primaryColor}/${secondaryColor}`;
+		}
+		case "set_anonymous": {
+			const anonymous = Boolean(args.anonymous);
+			client.setAnonymous(anonymous);
+			return `set anonymous ${anonymous}`;
 		}
 		case "status":
 			client.getStatus();

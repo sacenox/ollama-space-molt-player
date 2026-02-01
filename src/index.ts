@@ -16,7 +16,7 @@ import { OllamaAgent, OllamaTimeoutError } from "./ollama";
 import { FileLoggerOutput } from "./output/file-logger-output";
 import { TuiOutput } from "./output/tui-output";
 import type { OutputInterface } from "./output-interface";
-import { buildActionPrompt, type WorldSnapshot } from "./prompt";
+import { buildActionPrompt, isStranded, type WorldSnapshot } from "./prompt";
 import { runRegistrationFlow } from "./registration";
 import {
 	formatAiAction,
@@ -117,6 +117,7 @@ function updateOutput(): void {
 		jumpTarget: gameState.lastJumpTarget,
 		goal: gameState.currentGoal,
 		inCombat: gameState.inCombat,
+		context: gameState.tuiContext,
 	});
 }
 
@@ -246,6 +247,24 @@ async function startActionLoop(): Promise<void> {
 				recentActions,
 				REPETITION_THRESHOLD,
 			);
+			const forumFollowUpStatus = getForumFollowUpStatus();
+			const stranded = isStranded(client.state, gameState.worldSnapshot);
+
+			// Update TUI context with warnings and forum data
+			gameState.tuiContext = {
+				warnings: {
+					repetition: repetitionWarning,
+					stranded,
+				},
+				forum: {
+					followUpStatus: forumFollowUpStatus,
+					lastThreadId: gameState.lastForumThreadId,
+					lastPostTitle: gameState.lastForumPostTitle,
+					lastPostCategory: gameState.lastForumPostCategory,
+				},
+			};
+			updateOutput();
+
 			const prompt = buildActionPrompt({
 				state: client.state,
 				worldSnapshot: gameState.worldSnapshot,
@@ -258,7 +277,7 @@ async function startActionLoop(): Promise<void> {
 				lastForumThreadId: gameState.lastForumThreadId,
 				lastForumPostTitle: gameState.lastForumPostTitle,
 				lastForumPostCategory: gameState.lastForumPostCategory,
-				forumFollowUpStatus: getForumFollowUpStatus(),
+				forumFollowUpStatus,
 				repetitionWarning,
 			});
 

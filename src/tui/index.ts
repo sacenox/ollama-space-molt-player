@@ -7,6 +7,7 @@ import type { AlignmentType } from "../types";
 import { applyColor, COLORS, THRESHOLDS } from "./colors";
 import type { FormattedMessage } from "./formatters";
 import { computeLayout, createBoxOptions } from "./layout";
+import { renderContextPanel } from "./panels/context";
 import { type LocationData, renderLocationPanel } from "./panels/location";
 import { LogPanel, type LogTab } from "./panels/log";
 import {
@@ -15,6 +16,26 @@ import {
 } from "./panels/player-ship";
 import { renderTacticalPanel, type TacticalData } from "./panels/tactical";
 import { renderWorldInfoPanel, type WorldInfoData } from "./panels/world-info";
+
+export interface ContextWarnings {
+	repetition?: {
+		action: string;
+		count: number;
+	} | null;
+	stranded?: boolean;
+}
+
+export interface ContextForum {
+	followUpStatus?: "unread" | "periodic" | null;
+	lastThreadId?: string | null;
+	lastPostTitle?: string | null;
+	lastPostCategory?: string | null;
+}
+
+export interface TuiContext {
+	warnings?: ContextWarnings;
+	forum?: ContextForum;
+}
 
 export interface TuiUpdateData {
 	player?: Player | null;
@@ -41,6 +62,7 @@ export interface TuiUpdateData {
 		shield?: number;
 		maxShield?: number;
 	};
+	context?: TuiContext;
 }
 
 export class Tui {
@@ -50,6 +72,7 @@ export class Tui {
 	private logPanel: LogPanel;
 	private locationBox: blessed.Widgets.BoxElement;
 	private tacticalBox: blessed.Widgets.BoxElement;
+	private contextBox: blessed.Widgets.BoxElement;
 	private statusBar: blessed.Widgets.BoxElement;
 	private debugBox: blessed.Widgets.BoxElement | null;
 	private exitHandler: (() => void) | null = null;
@@ -116,6 +139,11 @@ export class Tui {
 			),
 		);
 		this.screen.append(this.tacticalBox);
+
+		this.contextBox = blessed.box(
+			createBoxOptions(layout.context, "Context", COLORS.PANEL_BORDER_INACTIVE),
+		);
+		this.screen.append(this.contextBox);
 
 		this.statusBar = blessed.box({
 			parent: this.screen,
@@ -219,6 +247,7 @@ export class Tui {
 		if (data.inCombat !== undefined) this.state.inCombat = data.inCombat;
 		if (data.combatTarget !== undefined)
 			this.state.combatTarget = data.combatTarget;
+		if (data.context !== undefined) this.state.context = data.context;
 
 		this.updatePanels();
 		this.render();
@@ -281,6 +310,9 @@ export class Tui {
 			nearby: this.state.nearby ?? [],
 		};
 		this.tacticalBox.setContent(renderTacticalPanel(tacticalData));
+
+		// Context panel
+		this.contextBox.setContent(renderContextPanel(this.state.context));
 
 		// Status bar
 		this.updateStatusBar();
@@ -367,6 +399,11 @@ export class Tui {
 		this.tacticalBox.top = layout.tactical.top;
 		this.tacticalBox.width = layout.tactical.width;
 		this.tacticalBox.height = layout.tactical.height;
+
+		this.contextBox.left = layout.context.left;
+		this.contextBox.top = layout.context.top;
+		this.contextBox.width = layout.context.width;
+		this.contextBox.height = layout.context.height;
 
 		this.statusBar.top = layout.statusBar.top;
 		this.statusBar.width = layout.statusBar.width;

@@ -48,7 +48,7 @@ function getPersonalityGuidance(personality: PersonalityType): string {
 			return `As a Merchant, you prioritize profit:
 - Dock at stations to check market prices and listings
 - Buy low in one system, sell high in another
-- Post trade offers in faction chat or forums
+- Post or create trade offers in faction chat or forums
 - Track profitable routes and cargo opportunities`;
 
 		case "warrior":
@@ -56,7 +56,7 @@ function getPersonalityGuidance(personality: PersonalityType): string {
 - Engage hostile or rival players when you spot them
 - Scan targets before attacking to assess threats
 - Seek out contested POIs and combat zones
-- Boast victories in local or faction chat`;
+- Boast victories in social actions`;
 
 		case "diplomat":
 			return `As a Diplomat, you prioritize relationships:
@@ -130,7 +130,10 @@ function getEmpireDescription(empire: EmpireID): string {
 	}
 }
 
-function isStranded(state: ClientState, snapshot?: WorldSnapshot): boolean {
+export function isStranded(
+	state: ClientState,
+	snapshot?: WorldSnapshot,
+): boolean {
 	const player = state.player;
 	const ship = state.ship;
 	if (!player || !ship) return false;
@@ -143,7 +146,6 @@ function isStranded(state: ClientState, snapshot?: WorldSnapshot): boolean {
 }
 
 const HELP_TEXT = `Available actions:
-==========================
 
 Connection Commands:
   register <username> <empire>  - Create new account (empires: solarian, voidborn, crimson, nebula, outerrim)
@@ -181,6 +183,11 @@ Chat:
   msg <player_id> <message>     - Send private message
   create_faction <name> <tag>   - Create a faction
 
+Profile:
+  set_status <message> <tag>    - Set status message and clan tag
+  set_colors <primary> <secondary> - Set profile colors
+  set_anonymous <true|false>    - Toggle anonymous mode
+
 Forum:
   forum [page] [category]       - List forum threads (categories: general, bugs, suggestions, trading, factions)
   forum_thread <thread_id>      - Read a forum thread
@@ -198,7 +205,7 @@ export function buildActionPrompt(context: PromptContext): string {
 	const memoryText = formatGroupedMemory(context.recentHistory);
 	const forumFollowUpBlock = formatForumFollowUp(context);
 	const forumContextBlock = formatForumContext(context.recentHistory);
-	const helpBlock = `\nHELP MENU:\n${HELP_TEXT}`;
+	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
 	const goalText = context.currentGoal?.trim()
 		? context.currentGoal.trim()
 		: "(none yet)";
@@ -225,19 +232,17 @@ Example: {"goal":"Request rescue","action":"faction","args":{"content":"Stranded
 `
 		: "";
 
-	return `You are an autonomous player for the SpaceMolt MMO.
+	return `You are playing the SpaceMolt.
 SpaceMolt is a massively multiplayer space game built for AI agents, set in "The Crustacean Cosmos."
 Agents explore, trade, battle, and build empires in a living universe with emergent wars and a player-driven economy.
 The game emphasizes real-time AI fleet combat, ongoing discoveries of new systems, and shifting trade routes and alliances.
-Players can run their own agent via a JSON-over-WebSocket protocol (one action per 10-second tick) or a reference client, and choose from five empires with distinct bonuses.
 
 HOW TO PLAY:
-You will receive current game state and recent events. Choose exactly one action to perform next.
-Use your goal to plan what you want to achieve. You can change your goal at any action. You must have a goal.
+Use all of the provided information to consider your goal. Then decide how to act next.
 Respond ONLY with a single JSON object. No extra text.
 ${helpBlock}
 
-CURRENT GOAL:
+YOUR GOAL:
 ${goalText}
 
 YOUR EMPIRE: ${getEmpireDescription(empire)}
@@ -256,21 +261,20 @@ YOUR SPEECH STYLE: ${speechStyleInfo.name}
 ${getSpeechStyleGuidance(speechStyle)}
 ${warningBlock}
 ${strandedBlock}
-CURRENT STATE:
+YOUR PLAYER:
 ${stateText}
 
-WORLD SNAPSHOT:
+WORLD INFORMATION:
 ${worldText}
 
  RECENT MEMORY:
  ${memoryText}
 
 ${forumFollowUpBlock}
-
 ${forumContextBlock}
  
  ACTION SCHEMA (JSON ONLY):
-  {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
+  {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -280,12 +284,15 @@ REQUIRED ARGS:
 - buy: {"listing_id":"...","quantity":number}
 - sell: {"item_id":"...","quantity":number}
 - craft: {"recipe_id":"..."}
-- chat: {"channel":"local|faction|private","content":"...","target_id":"..." if channel is private}
- - say: {"content":"..."}
- - faction: {"content":"..."}
- - msg: {"target_id":"...","content":"..."}
- - create_faction: {"name":"...","tag":"..."}
- - forum: {"page":number,"category":"general|bugs|suggestions|trading|factions"} (both optional)
+- chat: {"channel":"local|system|faction|private|global","content":"...","target_id":"..." if channel is private}
+- say: {"content":"..."}
+- faction: {"content":"..."}
+- msg: {"target_id":"...","content":"..."}
+- create_faction: {"name":"...","tag":"..."}
+- set_status: {"status_message":"...","clan_tag":"..."}
+- set_colors: {"primary_color":"...","secondary_color":"..."}
+- set_anonymous: {"anonymous":true|false}
+- forum: {"page":number,"category":"general|bugs|suggestions|trading|factions"} (both optional)
 - forum_thread: {"thread_id":"..."}
 - forum_post: {"category":"...","title":"...","content":"..."}
 - forum_reply: {"thread_id":"...","content":"..."}
@@ -299,34 +306,18 @@ FORMAT RULES:
 - Only use info actions (status/system/poi/base/nearby/cargo) when state is missing.
 - IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
-- If unsure, use {"goal":"...","action":"status"}.
 
 ERROR RECOVERY:
 - If an action FAILED in recent memory, do NOT retry it with the same arguments.
 - Change your approach: try a different action, move to a different location, or update your goal.
-- Common fixes: dock before refuel/repair, travel to belt before mine, undock before travel/jump.
-- If fuel is 0 and there is no base at your current POI, travel/jump/refuel/dock will fail. Ask for help or wait.
-
-GAMEPLAY HEURISTIC (use as a tie-breaker):
-- In combat: attack or scan nearby targets
-- Docked and damaged/low fuel: repair or refuel
-- Stranded (fuel=0, not docked, no base here): request help via say/faction/msg or wait
-- Docked with cargo: sell; with credits and listings: buy
-- At asteroid belt with cargo space: mine
-- Need station services: dock first
-- Want to travel while docked: undock first
-- Have POI list: travel to unexplored POIs
-- Current system exhausted: jump to connected system
 
  INTERACTION GUIDELINES:
- - Be respectful but competitive play is encouraged (attacking, boasting, complaining is fine)
  - Stay in character with your personality archetype and empire
  - Avoid spam - don't repeat identical messages rapidly
  - If you want to use faction chat but you are not in a faction, create one first
  - After creating a forum thread, read it immediately and revisit it occasionally when idle
  - Keep messages concise and game-relevant
 - If unsure what to say, stay silent rather than post nonsense
-- You're an AI agent - play authentically but don't explicitly announce you're AI unless asked
 `;
 }
 

@@ -18,7 +18,7 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
 	leftWidth: 20, // 20% for left sidebar
 	rightWidth: 20, // 20% for right sidebar (center gets 60%)
 	leftTopHeightPercent: 40, // 40% of left sidebar for player/ship panel
-	rightTopHeightPercent: 60, // 60% of right sidebar for location panel
+	rightTopHeightPercent: 40, // 40% of right sidebar for location panel
 };
 
 export interface ComputedLayout {
@@ -27,6 +27,7 @@ export interface ComputedLayout {
 	log: PanelDimensions;
 	location: PanelDimensions;
 	tactical: PanelDimensions;
+	context: PanelDimensions;
 	statusBar: PanelDimensions;
 }
 
@@ -67,14 +68,19 @@ export function computeLayout(
 		availableHeight - leftTopHeight,
 	);
 
-	// Right sidebar split
+	// Right sidebar split into 3 panels: location (40%), tactical (30%), context (30%)
 	const rightTopHeight = Math.max(
 		MIN_PANEL_HEIGHT,
 		Math.floor((availableHeight * config.rightTopHeightPercent) / 100),
 	);
+	const rightRemainingHeight = availableHeight - rightTopHeight;
+	const rightMiddleHeight = Math.max(
+		MIN_PANEL_HEIGHT,
+		Math.floor(rightRemainingHeight / 2),
+	);
 	const rightBottomHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		availableHeight - rightTopHeight,
+		rightRemainingHeight - rightMiddleHeight,
 	);
 
 	return {
@@ -105,6 +111,12 @@ export function computeLayout(
 		tactical: {
 			left: leftWidthAbs + centerWidthAbs,
 			top: rightTopHeight,
+			width: rightWidthAbs,
+			height: rightMiddleHeight,
+		},
+		context: {
+			left: leftWidthAbs + centerWidthAbs,
+			top: rightTopHeight + rightMiddleHeight,
 			width: rightWidthAbs,
 			height: rightBottomHeight,
 		},

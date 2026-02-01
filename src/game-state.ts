@@ -1,5 +1,6 @@
 import type { ClientState } from "../client/src/client";
 import type { WorldSnapshot } from "./prompt";
+import type { TuiContext } from "./tui/index";
 import type { Credentials, RegistrationChoice } from "./types";
 
 export class GameState {
@@ -31,6 +32,9 @@ export class GameState {
 
 	registrationRetries = 0;
 	failedRegistrationNames: string[] = [];
+
+	// TUI context (warnings + forum) - updated during action loop
+	tuiContext: TuiContext = {};
 
 	readonly MAX_REGISTRATION_RETRIES = 3;
 }
