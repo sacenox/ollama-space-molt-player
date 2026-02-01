@@ -1,7 +1,5 @@
-import type { ClientState } from "../client/src/client";
 import { SpaceMoltClient } from "../client/src/client";
 import type {
-	CargoItem,
 	ChatMessage,
 	EmpireID,
 	ErrorPayload,
@@ -26,6 +24,20 @@ import {
 	type WorldSnapshot,
 } from "./prompt";
 import { Tui } from "./tui";
+import {
+	formatAiAction,
+	formatAiGoal,
+	formatAiThinking,
+	formatChatMessage,
+	formatError,
+	formatLoggedIn,
+	formatMotd,
+	formatOk,
+	formatRegistered,
+	formatScanResult,
+	formatSystemMessage,
+	formatWelcome,
+} from "./tui/formatters";
 
 type Credentials = {
 	username: string;
@@ -51,7 +63,7 @@ const tui = new Tui(config.debug);
 
 const client = new SpaceMoltClient({
 	url: config.spacemoltUrl,
-	debug: false, //config.debug,
+	debug: false,
 	reconnect: true,
 });
 
@@ -68,8 +80,14 @@ let currentGoal: string | null = null;
 let lastSystemId: string | null = null;
 let lastPoiId: string | null = null;
 let lastDocked = false;
+let inCombat = false;
 const MAX_REGISTRATION_RETRIES = 3;
 const failedRegistrationNames: string[] = [];
+
+// Cache player/ship data since client.state doesn't maintain them
+let cachedPlayer: typeof client.state.player = null;
+let cachedShip: typeof client.state.ship = null;
+let lastCredits: number | null = null;
 
 async function loadCredentials(): Promise<Credentials | null> {
 	try {
@@ -92,37 +110,25 @@ async function saveCredentials(
 	await Bun.write(config.credentialsFile, JSON.stringify(data, null, 2));
 }
 
-function log(message: string): void {
-	tui.log(message);
-}
-
-function updateStatus(): void {
+function updateTui(): void {
 	const state = client.state;
-	if (!state.player || !state.ship) {
-		tui.setStatus("Not logged in");
-		tui.setSidebar("Not logged in.");
-		return;
-	}
-	const statusText = buildStatusText(
-		state,
-		worldSnapshot,
-		travelInProgress,
-		lastTravelTarget,
-		jumpInProgress,
-		lastJumpTarget,
-		currentGoal,
-	);
-	const sidebarText = formatSidebar(
-		state,
-		worldSnapshot,
-		travelInProgress,
-		lastTravelTarget,
-		jumpInProgress,
-		lastJumpTarget,
-		credentials?.personality,
-	);
-	tui.setStatus(statusText);
-	tui.setSidebar(sidebarText);
+	tui.update({
+		player: cachedPlayer,
+		ship: cachedShip,
+		system: worldSnapshot.system ?? state.system ?? null,
+		poi: worldSnapshot.poi ?? state.poi ?? null,
+		base: worldSnapshot.base ?? state.base ?? null,
+		pois: worldSnapshot.pois ?? [],
+		nearby: state.nearby ?? [],
+		personality: credentials?.personality,
+		tick: state.currentTick,
+		traveling: travelInProgress,
+		travelTarget: lastTravelTarget,
+		jumping: jumpInProgress,
+		jumpTarget: lastJumpTarget,
+		goal: currentGoal,
+		inCombat,
+	});
 }
 
 function saveSnapshot(): void {
@@ -138,7 +144,11 @@ function saveSnapshot(): void {
 }
 
 async function runRegistrationFlow(): Promise<void> {
-	log("No credentials found. Asking LLM to create a character...");
+	tui.log(
+		formatSystemMessage(
+			"No credentials found. Asking LLM to create a character...",
+		),
+	);
 	let attempts = 0;
 	while (attempts < 3) {
 		attempts += 1;
@@ -147,9 +157,7 @@ async function runRegistrationFlow(): Promise<void> {
 			tui.setPrompt(prompt);
 			const result = await ollama.generateJson<RegistrationChoice>(prompt);
 			if (result.thinking) {
-				log(
-					`[Thinking] ${result.thinking.slice(0, 200)}${result.thinking.length > 200 ? "..." : ""}`,
-				);
+				tui.log(formatAiThinking(result.thinking));
 			}
 			const username = String(result.json.username ?? "").trim();
 			const empire = String(result.json.empire ?? "").trim() as EmpireID;
@@ -173,14 +181,22 @@ async function runRegistrationFlow(): Promise<void> {
 				personality_reason: personalityReason,
 			};
 			const personalityInfo = PERSONALITY_ARCHETYPES[personality];
-			log(`Registering new account: ${username} (${empire})`);
-			log(
-				`Chosen personality: ${personalityInfo.emoji} ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
+			tui.log(
+				formatSystemMessage(`Registering new account: ${username} (${empire})`),
+			);
+			tui.log(
+				formatSystemMessage(
+					`Chosen personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
+				),
 			);
 			client.register(username, empire);
 			return;
 		} catch (error) {
-			log(`Registration attempt failed: ${(error as Error).message}`);
+			tui.log(
+				formatSystemMessage(
+					`Registration attempt failed: ${(error as Error).message}`,
+				),
+			);
 		}
 	}
 
@@ -190,7 +206,11 @@ async function runRegistrationFlow(): Promise<void> {
 		empire: "solarian",
 		personality: "pragmatist",
 	};
-	log(`Falling back to account: ${fallback} (solarian, pragmatist)`);
+	tui.log(
+		formatSystemMessage(
+			`Falling back to account: ${fallback} (solarian, pragmatist)`,
+		),
+	);
 	client.register(fallback, "solarian");
 }
 
@@ -284,14 +304,12 @@ async function startActionLoop(): Promise<void> {
 			const promptExcerpt = prompt.slice(0, 1000);
 			const result = await ollama.generateJson(prompt);
 			if (result.thinking) {
-				log(
-					`[Thinking] ${result.thinking.slice(0, 200)}${result.thinking.length > 200 ? "..." : ""}`,
-				);
+				tui.log(formatAiThinking(result.thinking));
 			}
 			const validation = validateAction(result.json);
 			if (!validation.ok || !validation.action) {
 				const message = `Invalid action from LLM: ${validation.error ?? "unknown"}`;
-				log(message);
+				tui.log(formatSystemMessage(message));
 				memory.appendEvent("llm_invalid_action", {
 					error: validation.error,
 					raw: result.raw,
@@ -309,7 +327,7 @@ async function startActionLoop(): Promise<void> {
 				const message = target
 					? `Invalid action from LLM: Unknown nearby target: ${target}`
 					: "Invalid action from LLM: Missing target_id";
-				log(message);
+				tui.log(formatSystemMessage(message));
 				memory.appendEvent("llm_invalid_action", {
 					error: message,
 					raw: result.raw,
@@ -323,6 +341,8 @@ async function startActionLoop(): Promise<void> {
 			if (client.state.player?.username && goal) {
 				currentGoal = goal;
 				memory.setGoal(client.state.player.username, goal);
+				tui.log(formatAiGoal(goal));
+				updateTui();
 			}
 			memory.appendAction(
 				actionName,
@@ -338,8 +358,8 @@ async function startActionLoop(): Promise<void> {
 				lastJumpTarget =
 					String(validation.action.args?.target_system ?? "").trim() || null;
 			}
-			const actionLog = dispatchAction(client, validation.action);
-			log(`Action: ${actionLog}`);
+			dispatchAction(client, validation.action);
+			tui.log(formatAiAction(actionName, validation.action.args));
 			memory.appendEvent("action_sent", { action: validation.action });
 
 			if (actionName === "travel") {
@@ -349,10 +369,12 @@ async function startActionLoop(): Promise<void> {
 		} catch (error) {
 			const message = (error as Error).message;
 			if (error instanceof OllamaTimeoutError) {
-				log(`LLM timeout: ${message}. Retrying next tick.`);
+				tui.log(
+					formatSystemMessage(`LLM timeout: ${message}. Retrying next tick.`),
+				);
 				memory.appendEvent("llm_timeout", { message });
 			} else {
-				log(`Loop error: ${message}`);
+				tui.log(formatSystemMessage(`Loop error: ${message}`));
 				memory.appendEvent("loop_error", { message });
 			}
 		}
@@ -382,44 +404,6 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function formatOkPayload(payload: Record<string, unknown>): string {
-	if (payload.action) {
-		return `OK ${payload.action}`;
-	}
-	const summary = summarizeOkPayload(payload);
-	if (summary) return `OK ${summary}`;
-	return `OK ${safeJson(payload)}`;
-}
-
-function safeJson(value: unknown): string {
-	try {
-		return JSON.stringify(value);
-	} catch {
-		return "[unserializable]";
-	}
-}
-
-function summarizeOkPayload(payload: Record<string, unknown>): string | null {
-	if (Array.isArray(payload.pois) && payload.pois.length > 0) {
-		const system = payload.system as { id?: string; name?: string } | undefined;
-		const systemLabel =
-			system?.name || system?.id ? ` for ${system?.name ?? system?.id}` : "";
-		return `system${systemLabel} with ${payload.pois.length} POIs`;
-	}
-	if (payload.poi && typeof payload.poi === "object") {
-		const poi = payload.poi as { id?: string; name?: string; type?: string };
-		return `poi ${poi.name ?? poi.id ?? ""}${poi.type ? ` (${poi.type})` : ""}`.trim();
-	}
-	if (payload.base && typeof payload.base === "object") {
-		const base = payload.base as { id?: string; name?: string };
-		return `base ${base.name ?? base.id ?? ""}`.trim();
-	}
-	if (payload.version) {
-		return `version ${String(payload.version)}`;
-	}
-	return null;
-}
-
 function shutdown(): void {
 	try {
 		client.disconnect();
@@ -435,12 +419,12 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 client.on<WelcomePayload>("welcome", async (data) => {
-	log(`Welcome: v${data.version} (tick ${data.tick_rate}s)`);
-	if (data.motd) log(`MOTD: ${data.motd}`);
+	tui.log(formatWelcome(data));
+	if (data.motd) tui.log(formatMotd(data.motd));
 	memory.appendEvent("welcome", data);
 
 	if (credentials) {
-		log(`Auto-login as ${credentials.username}`);
+		tui.log(formatSystemMessage(`Auto-login as ${credentials.username}`));
 		client.login(credentials.username, credentials.token);
 	} else {
 		await runRegistrationFlow();
@@ -462,16 +446,24 @@ client.on<RegisteredPayload>("registered", async (data) => {
 			token: data.token,
 			personality: pendingRegistration.personality,
 		};
-		log(`Registered. Saved credentials for ${pendingRegistration.username}`);
+		tui.log(formatRegistered(data));
 		pendingRegistration = null;
 	} else {
-		log("Registered but no pending registration found.");
+		tui.log(
+			formatSystemMessage("Registered but no pending registration found."),
+		);
 	}
 });
 
 client.on<LoggedInPayload>("logged_in", (data) => {
-	log(`Logged in as ${data.player.username} (${data.player.empire})`);
+	tui.log(formatLoggedIn(data));
 	memory.appendEvent("logged_in", data);
+
+	// Cache player and ship data
+	cachedPlayer = data.player;
+	cachedShip = data.ship;
+	lastCredits = data.player.credits;
+
 	worldSnapshot.system = data.system;
 	worldSnapshot.poi = data.poi;
 	lastSystemId = data.player.current_system ?? null;
@@ -483,13 +475,13 @@ client.on<LoggedInPayload>("logged_in", (data) => {
 	if (data.player.docked_at_base) {
 		client.getBase();
 	}
-	updateStatus();
+	updateTui();
 	saveSnapshot();
 	startActionLoop();
 });
 
 client.on<ErrorPayload>("error", (data) => {
-	log(`Error [${data.code}] ${data.message}`);
+	tui.log(formatError(data));
 	memory.appendEvent("error", data);
 	if (data.code === "username_taken" && pendingRegistration) {
 		if (pendingRegistration.username) {
@@ -497,13 +489,25 @@ client.on<ErrorPayload>("error", (data) => {
 		}
 		if (registrationRetries < MAX_REGISTRATION_RETRIES) {
 			registrationRetries += 1;
-			log("Username taken. Requesting a new registration name...");
+			tui.log(
+				formatSystemMessage(
+					"Username taken. Requesting a new registration name...",
+				),
+			);
 			pendingRegistration = null;
 			runRegistrationFlow();
 		} else {
-			log("Username taken repeatedly. Falling back to random name.");
+			tui.log(
+				formatSystemMessage(
+					"Username taken repeatedly. Falling back to random name.",
+				),
+			);
 			const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
-			pendingRegistration = { username: fallback, empire: "solarian" };
+			pendingRegistration = {
+				username: fallback,
+				empire: "solarian",
+				personality: "pragmatist",
+			};
 			client.register(fallback, "solarian");
 		}
 	}
@@ -511,30 +515,61 @@ client.on<ErrorPayload>("error", (data) => {
 
 client.on<StateUpdatePayload>("state_update", (data) => {
 	memory.appendEvent("state_update", data);
-	refreshSnapshotForLocation(data.player);
-	updateStatus();
-	saveSnapshot();
-	if (data.in_combat) {
-		log(
-			`IN COMBAT: Hull ${data.ship.hull}/${data.ship.max_hull} Shield ${data.ship.shield}/${data.ship.max_shield}`,
-		);
+
+	// Update cached player and ship data (only if provided)
+	if (data.player) {
+		cachedPlayer = data.player;
 	}
+	if (data.ship) {
+		cachedShip = data.ship;
+	}
+
+	if (data.player) {
+		refreshSnapshotForLocation(data.player);
+
+		// Log state update if significant (only when credits change)
+		const creditsChanged =
+			lastCredits !== null && data.player.credits !== lastCredits;
+		if (creditsChanged) {
+			const diff = data.player.credits - (lastCredits ?? 0);
+			const sign = diff > 0 ? "+" : "";
+			tui.log(
+				formatSystemMessage(`Credits: ${data.player.credits} (${sign}${diff})`),
+			);
+			lastCredits = data.player.credits;
+		}
+	}
+
+	// Track combat state changes
+	const wasInCombat = inCombat;
+	inCombat = data.in_combat ?? false;
+
+	// Log combat state changes
+	if (inCombat && !wasInCombat) {
+		tui.log(formatSystemMessage("COMBAT STARTED"));
+	} else if (!inCombat && wasInCombat) {
+		tui.log(formatSystemMessage("Combat ended"));
+	}
+
+	updateTui();
+	saveSnapshot();
 });
 
 client.on<ChatMessage>("chat_message", (data) => {
-	log(`[${data.channel}] ${data.sender}: ${data.content}`);
+	tui.log(formatChatMessage(data));
 	memory.appendEvent("chat_message", data);
 });
 
 client.on<ScanResultPayload>("scan_result", (data) => {
-	log(`Scan result: ${safeJson(data)}`);
+	tui.log(formatScanResult(data));
 	memory.appendEvent("scan_result", data);
 });
 
 client.on("ok", (data: Record<string, unknown>) => {
-	log(formatOkPayload(data));
+	tui.log(formatOk(data));
 	memory.appendEvent("ok", data);
 	updateWorldSnapshotFromOk(data);
+
 	const action = typeof data.action === "string" ? data.action : null;
 	if (action === "travel") {
 		travelInProgress = true;
@@ -554,32 +589,46 @@ client.on("ok", (data: Record<string, unknown>) => {
 		client.getSystem();
 		client.getPOI();
 	}
+	updateTui();
 });
 
 client.on("version_info", (data: Record<string, unknown>) => {
-	log(`Version info: ${safeJson(data)}`);
+	const version = String(data.version ?? "unknown");
+	tui.log(formatSystemMessage(`Version: ${version}`));
 	memory.appendEvent("version_info", data);
 });
 
 credentials = await loadCredentials();
 
+console.log(`Instance: ${config.instanceName}`);
+console.log(`Credentials: ${config.credentialsFile}`);
+console.log(`Memory DB: ${config.memoryPath}`);
+
 // Force re-registration if personality is missing
 if (credentials && !credentials.personality) {
-	log("Credentials missing personality field - forcing re-registration");
+	tui.log(
+		formatSystemMessage(
+			"Credentials missing personality field - forcing re-registration",
+		),
+	);
 	try {
-		await Bun.write(config.credentialsFile, ""); // Clear file
+		await Bun.write(config.credentialsFile, "");
 		const file = Bun.file(config.credentialsFile);
 		if (await file.exists()) {
 			await file.remove?.();
 		}
 	} catch (error) {
-		log(`Failed to delete credentials: ${(error as Error).message}`);
+		tui.log(
+			formatSystemMessage(
+				`Failed to delete credentials: ${(error as Error).message}`,
+			),
+		);
 	}
 	credentials = null;
 }
 
 await client.connect();
-updateStatus();
+updateTui();
 
 function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
 	if (data.system && typeof data.system === "object") {
@@ -594,263 +643,4 @@ function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
 	if (data.base && typeof data.base === "object") {
 		worldSnapshot.base = data.base as WorldSnapshot["base"];
 	}
-}
-
-const SIDEBAR_WIDTH = 30;
-const SIDEBAR_CONTENT_WIDTH = SIDEBAR_WIDTH - 2;
-
-function buildStatusText(
-	state: ClientState,
-	snapshot: WorldSnapshot,
-	traveling: boolean,
-	travelTargetId: string | null,
-	jumping: boolean,
-	jumpTargetId: string | null,
-	goal: string | null,
-): string {
-	if (!state.player || !state.ship) return "Not logged in";
-	const goalText = goal?.trim() ? ` | Goal: ${goal.trim()}` : "";
-	if (jumping) {
-		const destination = resolveSystemName(jumpTargetId, snapshot, state);
-		return `Jumping to ${destination}${goalText}`;
-	}
-	if (traveling) {
-		const destination = resolvePoiName(travelTargetId, snapshot, state);
-		return `Traveling to ${destination}${goalText}`;
-	}
-	if (state.player.docked_at_base) return `Docked${goalText}`;
-	const currentPoi = resolvePoiName(state.player.current_poi, snapshot, state);
-	return `At ${currentPoi}${goalText}`;
-}
-
-function formatSidebar(
-	state: ClientState,
-	snapshot: WorldSnapshot,
-	traveling: boolean,
-	travelTargetId: string | null,
-	jumping: boolean,
-	jumpTargetId: string | null,
-	personality?: PersonalityType,
-): string {
-	if (!state.player || !state.ship) return "Not logged in.";
-
-	const width = SIDEBAR_CONTENT_WIDTH;
-	const lines: string[] = [];
-	const pushSection = (title: string, sectionLines: string[]): void => {
-		if (lines.length) lines.push("");
-		const titleText = truncate(`== ${title} ==`, width);
-		lines.push(`{cyan-fg}${titleText}{/cyan-fg}`);
-		for (const line of sectionLines) {
-			const truncated = truncate(line, width);
-			const colored = colorizeLabel(truncated);
-			lines.push(styleLine(colored));
-		}
-	};
-
-	const system = snapshot.system ?? state.system;
-	const poi = snapshot.poi ?? state.poi;
-	const base = snapshot.base ?? state.base;
-	const pois = snapshot.pois ?? [];
-
-	const playerLines = [
-		formatLine("Name", state.player.username, width),
-		formatLine("Empire", state.player.empire, width),
-	];
-	if (personality) {
-		const personalityInfo = PERSONALITY_ARCHETYPES[personality];
-		playerLines.push(
-			formatLine(
-				"Role",
-				`${personalityInfo.emoji} ${personalityInfo.name}`,
-				width,
-			),
-		);
-	}
-	playerLines.push(
-		formatLine("Credits", String(state.player.credits), width),
-		formatLine("Docked", state.player.docked_at_base ? "Y" : "N", width),
-		formatLine("Tick", String(state.currentTick), width),
-	);
-
-	pushSection("Player", playerLines);
-
-	pushSection("Ship", [
-		formatLine("Hull", `${state.ship.hull}/${state.ship.max_hull}`, width),
-		formatLine(
-			"Shield",
-			`${state.ship.shield}/${state.ship.max_shield}`,
-			width,
-		),
-		formatLine("Fuel", `${state.ship.fuel}/${state.ship.max_fuel}`, width),
-		formatLine(
-			"Cargo",
-			`${state.ship.cargo_used}/${state.ship.cargo_capacity}`,
-			width,
-		),
-	]);
-
-	const locationLines = [
-		formatLine(
-			"System",
-			system?.name ?? state.player.current_system ?? "-",
-			width,
-		),
-		formatLine("POI", poi?.name ?? state.player.current_poi ?? "-", width),
-		formatLine("Travel", traveling ? "Y" : "N", width),
-		formatLine("Jump", jumping ? "Y" : "N", width),
-	];
-	if (traveling) {
-		locationLines.push(
-			formatLine(
-				"Dest",
-				resolvePoiName(travelTargetId, snapshot, state),
-				width,
-			),
-		);
-	}
-	if (jumping) {
-		locationLines.push(
-			formatLine(
-				"JumpDest",
-				resolveSystemName(jumpTargetId, snapshot, state),
-				width,
-			),
-		);
-	}
-	pushSection("Location", locationLines);
-
-	const poiLines = formatPoiLines(pois, system?.pois, width);
-	pushSection("POIs", poiLines);
-
-	const cargoLines = formatCargoLines(state.ship.cargo ?? [], width);
-	pushSection("Cargo", cargoLines);
-
-	const baseLines = formatBaseLines(base, width);
-	pushSection("Base", baseLines);
-
-	const nearbyLines = formatNearbyLines(state.nearby ?? [], width);
-	pushSection("Nearby", nearbyLines);
-
-	return lines.join("\n");
-}
-
-function formatLine(label: string, value: string, _width: number): string {
-	return `${label}: ${value}`;
-}
-
-function truncate(value: string, width: number): string {
-	if (value.length <= width) return value;
-	if (width <= 3) return value.slice(0, width);
-	return `${value.slice(0, width - 3)}...`;
-}
-
-function colorizeLabel(line: string): string {
-	const index = line.indexOf(":");
-	if (index <= 0) return line;
-	const label = line.slice(0, index);
-	const rest = line.slice(index);
-	return `{yellow-fg}${label}{/yellow-fg}${rest}`;
-}
-
-function styleLine(line: string): string {
-	if (line.includes("{")) return line;
-	if (line === "none" || line === "-") return `{gray-fg}${line}{/gray-fg}`;
-	return line;
-}
-
-function resolveSystemName(
-	systemId: string | null | undefined,
-	snapshot: WorldSnapshot,
-	state: ClientState,
-): string {
-	if (!systemId) return "Unknown";
-	if (snapshot.system?.id === systemId && snapshot.system.name)
-		return snapshot.system.name;
-	if (state.system?.id === systemId && state.system.name)
-		return state.system.name;
-	return systemId;
-}
-
-function resolvePoiName(
-	poiId: string | null | undefined,
-	snapshot: WorldSnapshot,
-	state: ClientState,
-): string {
-	if (!poiId) return "Unknown";
-	const snapshotPoi = snapshot.pois?.find((entry) => entry.id === poiId);
-	if (snapshotPoi?.name) return snapshotPoi.name;
-	if (snapshot.poi?.id === poiId && snapshot.poi.name) return snapshot.poi.name;
-	if (state.poi?.id === poiId && state.poi.name) return state.poi.name;
-	return poiId;
-}
-
-function formatPoiLines(
-	pois: WorldSnapshot["pois"],
-	systemPois: string[] | undefined,
-	width: number,
-): string[] {
-	if (pois && pois.length > 0) {
-		const maxItems = 5;
-		const lines = pois
-			.slice(0, maxItems)
-			.map((poi) => truncate(poi.name || poi.id, width));
-		if (pois.length > maxItems) {
-			lines.push(truncate(`+${pois.length - maxItems} more`, width));
-		}
-		return lines;
-	}
-	if (systemPois && systemPois.length > 0) {
-		const maxItems = 5;
-		const lines = systemPois
-			.slice(0, maxItems)
-			.map((poiId) => truncate(poiId, width));
-		if (systemPois.length > maxItems) {
-			lines.push(truncate(`+${systemPois.length - maxItems} more`, width));
-		}
-		return lines;
-	}
-	return ["none"];
-}
-
-function formatCargoLines(
-	cargo: CargoItem[] | undefined,
-	width: number,
-): string[] {
-	if (!cargo || cargo.length === 0) return ["none"];
-	const maxItems = 6;
-	const lines = cargo
-		.slice(0, maxItems)
-		.map((item) => truncate(`${item.item_id} x${item.quantity}`, width));
-	if (cargo.length > maxItems) {
-		lines.push(truncate(`+${cargo.length - maxItems} more`, width));
-	}
-	return lines;
-}
-
-function formatBaseLines(base: WorldSnapshot["base"], width: number): string[] {
-	if (!base) return ["none"];
-	const services = Object.keys(base.services)
-		.filter((key) => (base.services as Record<string, boolean>)[key])
-		.join(", ");
-	return [
-		formatLine("Name", base.name || base.id, width),
-		formatLine("Services", services || "none", width),
-	];
-}
-
-function formatNearbyLines(
-	nearby: ClientState["nearby"],
-	width: number,
-): string[] {
-	if (!nearby || nearby.length === 0) return ["none"];
-	const maxItems = 6;
-	const lines = [formatLine("Count", String(nearby.length), width)];
-	for (const entry of nearby.slice(0, maxItems)) {
-		const name = entry.username ?? entry.player_id ?? "unknown";
-		lines.push(truncate(name, width));
-	}
-	if (nearby.length > maxItems) {
-		lines.push(truncate(`+${nearby.length - maxItems} more`, width));
-	}
-	return lines;
 }

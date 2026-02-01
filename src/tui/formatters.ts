@@ -1,0 +1,319 @@
+// Message formatting utilities - convert all events to human-readable strings
+
+import type {
+	ChatMessage,
+	ErrorPayload,
+	LoggedInPayload,
+	RegisteredPayload,
+	ScanResultPayload,
+	WelcomePayload,
+} from "../../client/src/types";
+import { applyColor, COLORS } from "./colors";
+
+export type LogCategory = "game" | "ai" | "combat" | "chat" | "system";
+
+export interface FormattedMessage {
+	text: string;
+	category: LogCategory;
+	timestamp: string;
+}
+
+function getTimestamp(): string {
+	const now = new Date();
+	const h = String(now.getHours()).padStart(2, "0");
+	const m = String(now.getMinutes()).padStart(2, "0");
+	const s = String(now.getSeconds()).padStart(2, "0");
+	return `${h}:${m}:${s}`;
+}
+
+function formatWithTimestamp(
+	message: string,
+	category: LogCategory,
+): FormattedMessage {
+	const timestamp = getTimestamp();
+	const ts = applyColor(`[${timestamp}]`, COLORS.MSG_TIMESTAMP);
+	return {
+		text: `${ts} ${message}`,
+		category,
+		timestamp,
+	};
+}
+
+// Welcome message
+export function formatWelcome(data: WelcomePayload): FormattedMessage {
+	const msg = applyColor(
+		`Connected to SpaceMolt v${data.version} (tick rate: ${data.tick_rate}s)`,
+		COLORS.MSG_SUCCESS,
+	);
+	return formatWithTimestamp(msg, "system");
+}
+
+export function formatMotd(motd: string): FormattedMessage {
+	const msg = applyColor(`MOTD: ${motd}`, COLORS.MSG_CHAT);
+	return formatWithTimestamp(msg, "system");
+}
+
+// Registration
+export function formatRegistered(_data: RegisteredPayload): FormattedMessage {
+	const msg = applyColor(
+		`Registration successful - credentials saved`,
+		COLORS.MSG_SUCCESS,
+	);
+	return formatWithTimestamp(msg, "system");
+}
+
+// Login
+export function formatLoggedIn(data: LoggedInPayload): FormattedMessage {
+	const msg = applyColor(
+		`Logged in as ${data.player.username} (${data.player.empire})`,
+		COLORS.MSG_SUCCESS,
+	);
+	return formatWithTimestamp(msg, "game");
+}
+
+// Errors
+export function formatError(data: ErrorPayload): FormattedMessage {
+	const msg = applyColor(
+		`Error [${data.code}]: ${data.message}`,
+		COLORS.MSG_ERROR,
+	);
+	return formatWithTimestamp(msg, "system");
+}
+
+// Chat messages
+export function formatChatMessage(data: ChatMessage): FormattedMessage {
+	const msg = applyColor(
+		`[${data.channel}] ${data.sender}: ${data.content}`,
+		COLORS.MSG_CHAT,
+	);
+	return formatWithTimestamp(msg, "chat");
+}
+
+// Scan results
+export function formatScanResult(data: ScanResultPayload): FormattedMessage {
+	const parts: string[] = [];
+
+	if (data.player) {
+		parts.push(`Player: ${data.player.username || data.player.id}`);
+		if (data.player.empire) parts.push(`Empire: ${data.player.empire}`);
+	}
+
+	if (data.ship) {
+		parts.push(`Ship: ${data.ship.class_id || "Unknown"}`);
+		if (data.ship.hull !== undefined && data.ship.max_hull !== undefined) {
+			const hullPct = Math.round((data.ship.hull / data.ship.max_hull) * 100);
+			parts.push(`Hull: ${hullPct}%`);
+		}
+		if (data.ship.shield !== undefined && data.ship.max_shield !== undefined) {
+			const shieldPct = Math.round(
+				(data.ship.shield / data.ship.max_shield) * 100,
+			);
+			parts.push(`Shield: ${shieldPct}%`);
+		}
+	}
+
+	const msg = `Scan result: ${parts.join(", ")}`;
+	return formatWithTimestamp(msg, "game");
+}
+
+// OK messages - format based on action type
+export function formatOk(data: Record<string, unknown>): FormattedMessage {
+	const action = String(data.action ?? "");
+
+	switch (action) {
+		case "travel": {
+			const targetId = String(data.target_poi ?? "unknown");
+			const msg = applyColor(`Traveling to ${targetId}`, COLORS.MSG_SUCCESS);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "arrived": {
+			const poiId = String(data.poi_id ?? "destination");
+			const msg = applyColor(`Arrived at ${poiId}`, COLORS.MSG_SUCCESS);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "jump": {
+			const targetSystem = String(data.target_system ?? "unknown");
+			const msg = applyColor(
+				`Jumping to ${targetSystem} system`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "jumped": {
+			const systemId = String(data.system_id ?? "new system");
+			const msg = applyColor(
+				`Jumped to ${systemId} system`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "dock": {
+			const baseId = String(data.base_id ?? "base");
+			const msg = applyColor(`Docked at ${baseId}`, COLORS.MSG_SUCCESS);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "undock": {
+			const msg = applyColor("Undocked from base", COLORS.MSG_SUCCESS);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "mine": {
+			const resource = String(data.resource ?? "ore");
+			const quantity = Number(data.quantity ?? 0);
+			const msg = applyColor(
+				`Mined ${quantity > 0 ? `${quantity}x ` : ""}${resource}`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "buy": {
+			const itemId = String(data.item_id ?? "item");
+			const quantity = Number(data.quantity ?? 0);
+			const cost = Number(data.cost ?? 0);
+			const msg = applyColor(
+				`Bought ${quantity}x ${itemId} for ${cost} credits`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "sell": {
+			const itemId = String(data.item_id ?? "item");
+			const quantity = Number(data.quantity ?? 0);
+			const revenue = Number(data.revenue ?? 0);
+			const msg = applyColor(
+				`Sold ${quantity}x ${itemId} for ${revenue} credits`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "repair": {
+			const cost = Number(data.cost ?? 0);
+			const msg = applyColor(
+				`Repaired ship (cost: ${cost} credits)`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "refuel": {
+			const cost = Number(data.cost ?? 0);
+			const msg = applyColor(
+				`Refueled ship (cost: ${cost} credits)`,
+				COLORS.MSG_SUCCESS,
+			);
+			return formatWithTimestamp(msg, "game");
+		}
+
+		case "attack": {
+			const targetId = String(data.target_id ?? "target");
+			const damage = Number(data.damage ?? 0);
+			const msg = applyColor(
+				`Attacked ${targetId}${damage > 0 ? ` (${damage} damage)` : ""}`,
+				COLORS.STATUS_DANGER,
+			);
+			return formatWithTimestamp(msg, "combat");
+		}
+
+		default: {
+			// Generic OK message with summary
+			const summary = summarizeOkPayload(data);
+			const msg = `OK: ${summary}`;
+			return formatWithTimestamp(msg, "game");
+		}
+	}
+}
+
+function summarizeOkPayload(payload: Record<string, unknown>): string {
+	if (Array.isArray(payload.pois) && payload.pois.length > 0) {
+		const system = payload.system as { id?: string; name?: string } | undefined;
+		const systemLabel =
+			system?.name || system?.id ? ` for ${system?.name ?? system?.id}` : "";
+		return `System${systemLabel} with ${payload.pois.length} POIs`;
+	}
+	if (payload.poi && typeof payload.poi === "object") {
+		const poi = payload.poi as { id?: string; name?: string; type?: string };
+		return `POI ${poi.name ?? poi.id ?? ""}${poi.type ? ` (${poi.type})` : ""}`.trim();
+	}
+	if (payload.base && typeof payload.base === "object") {
+		const base = payload.base as { id?: string; name?: string };
+		return `Base ${base.name ?? base.id ?? ""}`.trim();
+	}
+	if (payload.version) {
+		return `Version ${String(payload.version)}`;
+	}
+	if (payload.action) {
+		return String(payload.action);
+	}
+	return "Action completed";
+}
+
+// AI-related messages
+export function formatAiThinking(thinking: string): FormattedMessage {
+	const truncated =
+		thinking.length > 200 ? `${thinking.slice(0, 200)}...` : thinking;
+	const msg = applyColor(`[AI Thinking] ${truncated}`, COLORS.MSG_AI);
+	return formatWithTimestamp(msg, "ai");
+}
+
+export function formatAiAction(
+	action: string,
+	args?: Record<string, unknown>,
+): FormattedMessage {
+	const argsStr =
+		args && Object.keys(args).length > 0
+			? ` (${Object.entries(args)
+					.map(([k, v]) => `${k}=${v}`)
+					.join(", ")})`
+			: "";
+	const msg = applyColor(`[AI Action] ${action}${argsStr}`, COLORS.MSG_AI);
+	return formatWithTimestamp(msg, "ai");
+}
+
+export function formatAiGoal(goal: string): FormattedMessage {
+	const msg = applyColor(`[AI Goal] ${goal}`, COLORS.MSG_AI);
+	return formatWithTimestamp(msg, "ai");
+}
+
+// Generic system message
+export function formatSystemMessage(message: string): FormattedMessage {
+	return formatWithTimestamp(message, "system");
+}
+
+export function formatCombatEnd(victory: boolean): FormattedMessage {
+	const result = victory ? "Victory" : "Defeated";
+	const msg = applyColor(`Combat ended - ${result}`, COLORS.STATUS_DANGER);
+	return formatWithTimestamp(msg, "combat");
+}
+
+export function formatDamageTaken(
+	damage: number,
+	hull: number,
+	maxHull: number,
+	shield: number,
+	maxShield: number,
+): FormattedMessage {
+	const msg = applyColor(
+		`Took ${damage} damage (Hull: ${hull}/${maxHull}, Shield: ${shield}/${maxShield})`,
+		COLORS.STATUS_DANGER,
+	);
+	return formatWithTimestamp(msg, "combat");
+}
+
+export function formatDamageDealt(
+	damage: number,
+	targetId: string,
+): FormattedMessage {
+	const msg = applyColor(
+		`Dealt ${damage} damage to ${targetId}`,
+		COLORS.STATUS_DANGER,
+	);
+	return formatWithTimestamp(msg, "combat");
+}

@@ -6,7 +6,7 @@ Purpose: help coding agents work safely and consistently in this repo.
 - Runtime: Bun (TypeScript, ESM).
 - UI: terminal UI via `blessed`.
 - LLM: local Ollama HTTP API.
-- Data: SQLite via `bun:sqlite` at `memory.sqlite`.
+- Data: SQLite via `bun:sqlite` at `memory-{name}.sqlite`.
 - Game client: SpaceMolt reference client is a git submodule in `client/`.
 
 ## Key Paths
@@ -23,7 +23,11 @@ Purpose: help coding agents work safely and consistently in this repo.
 - `bun install`
 
 ### Run app
-- `bun run ollama-play`
+- `bun run ollama-play --name <instance-name>` (or `-n <instance-name>`)
+- The `--name` argument is required and determines file paths:
+  - Credentials: `.spacemolt-bot-{name}.json`
+  - Memory DB: `memory-{name}.sqlite`
+- Example: `bun run ollama-play --name alice` uses `.spacemolt-bot-alice.json` and `memory-alice.sqlite`
 
 ### Format
 - `bun run biome:format`
@@ -47,7 +51,7 @@ Purpose: help coding agents work safely and consistently in this repo.
 - `OLLAMA_TIMEOUT_MS` is not present; timeout is configured in `src/config.ts` as `ollamaTimeoutMs`.
 - `SPACEMOLT_URL` (default: `wss://game.spacemolt.com/ws`)
 - `DEBUG` (string, enable TUI prompt pane when `true`)
-- `MEMORY_DB` (default: `memory.sqlite`)
+- `MEMORY_DB` (default: `memory-{name}.sqlite`)
 
 ## Cursor / Copilot Rules
 - No Cursor rules found in `.cursor/rules/` or `.cursorrules`.
