@@ -12,7 +12,7 @@ import type {
 import { config } from "./config";
 import { MemoryStore } from "./memory";
 import { OllamaAgent, OllamaTimeoutError } from "./ollama";
-import { buildActionPrompt, buildRegistrationPrompt } from "./prompt";
+import { buildActionPrompt, buildRegistrationPrompt, type WorldSnapshot } from "./prompt";
 import { dispatchAction, validateAction } from "./actions";
 import { Tui } from "./tui";
 
@@ -33,6 +33,10 @@ let credentials: Credentials | null = null;
 let pendingRegistration: RegistrationChoice | null = null;
 let includeHelpInPrompt = true;
 let actionLoopRunning = false;
+let worldSnapshot: WorldSnapshot = {};
+let registrationRetries = 0;
+const MAX_REGISTRATION_RETRIES = 3;
+const failedRegistrationNames: string[] = [];
 
 async function loadCredentials(): Promise<Credentials | null> {
   try {
@@ -95,7 +99,7 @@ async function runRegistrationFlow(): Promise<void> {
   while (attempts < 3) {
     attempts += 1;
     try {
-      const prompt = buildRegistrationPrompt(true);
+      const prompt = buildRegistrationPrompt(true, failedRegistrationNames);
       const result = await ollama.generateJson<RegistrationChoice>(prompt);
       const username = String(result.json.username ?? "").trim();
       const empire = String(result.json.empire ?? "").trim() as EmpireID;
@@ -131,6 +135,7 @@ async function startActionLoop(): Promise<void> {
       const recentEvents = memory.getRecentEvents(config.maxContextEvents);
       const prompt = buildActionPrompt({
         state: client.state,
+        worldSnapshot,
         recentActions,
         recentEvents,
         includeHelp: includeHelpInPrompt,
@@ -159,6 +164,11 @@ async function startActionLoop(): Promise<void> {
       const actionLog = dispatchAction(client, validation.action);
       log(`Action: ${actionLog}`);
       memory.appendEvent("action_sent", { action: validation.action });
+
+      if (validation.action.action === "travel") {
+        client.getSystem();
+        client.getPOI();
+      }
     } catch (error) {
       const message = (error as Error).message;
       if (error instanceof OllamaTimeoutError) {
@@ -185,6 +195,8 @@ function formatOkPayload(payload: Record<string, unknown>): string {
   if (payload.action) {
     return `OK ${payload.action}`;
   }
+  const summary = summarizeOkPayload(payload);
+  if (summary) return `OK ${summary}`;
   return `OK ${safeJson(payload)}`;
 }
 
@@ -194,6 +206,26 @@ function safeJson(value: unknown): string {
   } catch {
     return "[unserializable]";
   }
+}
+
+function summarizeOkPayload(payload: Record<string, unknown>): string | null {
+  if (Array.isArray(payload.pois) && payload.pois.length > 0) {
+    const system = payload.system as { id?: string; name?: string } | undefined;
+    const systemLabel = system?.name || system?.id ? ` for ${system?.name ?? system?.id}` : "";
+    return `system${systemLabel} with ${payload.pois.length} POIs`;
+  }
+  if (payload.poi && typeof payload.poi === "object") {
+    const poi = payload.poi as { id?: string; name?: string; type?: string };
+    return `poi ${poi.name ?? poi.id ?? ""}${poi.type ? ` (${poi.type})` : ""}`.trim();
+  }
+  if (payload.base && typeof payload.base === "object") {
+    const base = payload.base as { id?: string; name?: string };
+    return `base ${base.name ?? base.id ?? ""}`.trim();
+  }
+  if (payload.version) {
+    return `version ${String(payload.version)}`;
+  }
+  return null;
 }
 
 function shutdown(): void {
@@ -225,10 +257,12 @@ client.on<WelcomePayload>("welcome", async (data) => {
 
 client.on<RegisteredPayload>("registered", async (data) => {
   memory.appendEvent("registered", data);
+  registrationRetries = 0;
+  failedRegistrationNames.length = 0;
   if (pendingRegistration) {
     await saveCredentials(pendingRegistration.username, data.token);
     log(`Registered. Saved credentials for ${pendingRegistration.username}`);
-    client.login(pendingRegistration.username, data.token);
+    pendingRegistration = null;
   } else {
     log("Registered but no pending registration found.");
   }
@@ -237,6 +271,13 @@ client.on<RegisteredPayload>("registered", async (data) => {
 client.on<LoggedInPayload>("logged_in", (data) => {
   log(`Logged in as ${data.player.username} (${data.player.empire})`);
   memory.appendEvent("logged_in", data);
+  worldSnapshot.system = data.system;
+  worldSnapshot.poi = data.poi;
+  client.getSystem();
+  client.getPOI();
+  if (data.player.docked_at_base) {
+    client.getBase();
+  }
   updateStatus();
   saveSnapshot();
   startActionLoop();
@@ -245,6 +286,22 @@ client.on<LoggedInPayload>("logged_in", (data) => {
 client.on<ErrorPayload>("error", (data) => {
   log(`Error [${data.code}] ${data.message}`);
   memory.appendEvent("error", data);
+  if (data.code === "username_taken" && pendingRegistration) {
+    if (pendingRegistration.username) {
+      failedRegistrationNames.push(pendingRegistration.username);
+    }
+    if (registrationRetries < MAX_REGISTRATION_RETRIES) {
+      registrationRetries += 1;
+      log("Username taken. Requesting a new registration name...");
+      pendingRegistration = null;
+      runRegistrationFlow();
+    } else {
+      log("Username taken repeatedly. Falling back to random name.");
+      const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
+      pendingRegistration = { username: fallback, empire: "solarian" };
+      client.register(fallback, "solarian");
+    }
+  }
 });
 
 client.on<StateUpdatePayload>("state_update", (data) => {
@@ -269,6 +326,7 @@ client.on<ScanResultPayload>("scan_result", (data) => {
 client.on("ok", (data: Record<string, unknown>) => {
   log(formatOkPayload(data));
   memory.appendEvent("ok", data);
+  updateWorldSnapshotFromOk(data);
 });
 
 client.on("version_info", (data: Record<string, unknown>) => {
@@ -279,3 +337,18 @@ client.on("version_info", (data: Record<string, unknown>) => {
 credentials = await loadCredentials();
 await client.connect();
 updateStatus();
+
+function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
+  if (data.system && typeof data.system === "object") {
+    worldSnapshot.system = data.system as WorldSnapshot["system"];
+  }
+  if (Array.isArray(data.pois)) {
+    worldSnapshot.pois = data.pois as WorldSnapshot["pois"];
+  }
+  if (data.poi && typeof data.poi === "object") {
+    worldSnapshot.poi = data.poi as WorldSnapshot["poi"];
+  }
+  if (data.base && typeof data.base === "object") {
+    worldSnapshot.base = data.base as WorldSnapshot["base"];
+  }
+}

@@ -1,11 +1,20 @@
 import type { ClientState } from "../client/src/client";
+import type { Base, POI, System } from "../client/src/types";
 import type { StoredAction, StoredEvent } from "./memory";
 
 export interface PromptContext {
   state: ClientState;
+  worldSnapshot?: WorldSnapshot;
   recentActions: StoredAction[];
   recentEvents: StoredEvent[];
   includeHelp: boolean;
+}
+
+export interface WorldSnapshot {
+  system?: System | null;
+  pois?: POI[];
+  poi?: POI | null;
+  base?: Base | null;
 }
 
 const HELP_TEXT = `SpaceMolt Reference Client
@@ -60,6 +69,7 @@ Other:
 
 export function buildActionPrompt(context: PromptContext): string {
   const stateText = formatState(context.state);
+  const worldText = formatWorldSnapshot(context.state, context.worldSnapshot);
   const memoryText = formatMemory(context.recentActions, context.recentEvents);
   const helpBlock = context.includeHelp ? `\nHELP MENU:\n${HELP_TEXT}` : "";
 
@@ -70,6 +80,9 @@ ${helpBlock}
 
 CURRENT STATE:
 ${stateText}
+
+WORLD SNAPSHOT:
+${worldText}
 
 RECENT MEMORY:
 ${memoryText}
@@ -93,11 +106,17 @@ NOTES:
 `;
 }
 
-export function buildRegistrationPrompt(includeHelp: boolean): string {
+export function buildRegistrationPrompt(includeHelp: boolean, failedNames: string[] = []): string {
   const helpBlock = includeHelp ? `\nHELP MENU:\n${HELP_TEXT}` : "";
+  const failedBlock = failedNames.length
+    ? `\nPreviously rejected usernames (do NOT reuse): ${failedNames.join(", ")}`
+    : "";
   return `You are creating a SpaceMolt account. Choose a short, memorable username and an empire.
+The username MUST be unique and original. Do not reuse any prior suggestions.
+To maximize uniqueness, include a distinctive suffix (digits or a short tag).
 Respond ONLY with JSON. No extra text.
 ${helpBlock}
+${failedBlock}
 
 JSON SCHEMA:
 {"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim"}
@@ -133,6 +152,67 @@ function formatState(state: ClientState): string {
     lines.push(`Nearby: ${list}`);
   } else {
     lines.push("Nearby: none");
+  }
+
+  return lines.join("\n");
+}
+
+function formatWorldSnapshot(state: ClientState, snapshot?: WorldSnapshot): string {
+  const system = snapshot?.system ?? state.system;
+  const currentPoi = snapshot?.poi ?? state.poi;
+  const base = snapshot?.base ?? state.base;
+  const pois = snapshot?.pois ?? [];
+  const lines: string[] = [];
+
+  if (!system) {
+    const systemId = state.player?.current_system;
+    lines.push(systemId ? `System: ${systemId} (details unavailable)` : "System details unavailable.");
+    return lines.join("\n");
+  }
+
+  lines.push(`System: ${system.name} (${system.id}) police=${system.police_level}`);
+  if (system.connections?.length) {
+    lines.push(`Connections: ${system.connections.join(", ")}`);
+  }
+
+  if (currentPoi) {
+    lines.push(`Current POI: ${currentPoi.name} (${currentPoi.id}) type=${currentPoi.type}`);
+  } else if (state.player?.current_poi) {
+    lines.push(`Current POI: ${state.player.current_poi} (details unavailable)`);
+  }
+
+  if (pois.length > 0) {
+    lines.push("POIs:");
+    for (const poi of pois) {
+      const resources = poi.resources?.length
+        ? ` resources=${poi.resources
+            .map((r) => `${r.resource_id}(${r.richness})`)
+            .join(", ")}`
+        : "";
+      const baseRef = poi.base_id ? ` base=${poi.base_id}` : "";
+      const position = ` pos=${poi.position.x},${poi.position.y}`;
+      lines.push(`- ${poi.id} ${poi.type} ${poi.name}${position}${resources}${baseRef}`.trim());
+    }
+  } else if (system.pois?.length) {
+    lines.push(`POI IDs: ${system.pois.join(", ")}`);
+  } else {
+    lines.push("POIs: unavailable");
+  }
+
+  if (base) {
+    const services = Object.keys(base.services)
+      .filter((key) => (base.services as Record<string, boolean>)[key])
+      .join(", ");
+    lines.push(`Base: ${base.name} (${base.id}) services=${services || "none"}`);
+  }
+
+  if (state.nearby?.length) {
+    const targets = state.nearby
+      .map((p) => `${p.username ?? "unknown"} (${p.player_id ?? "unknown"})`)
+      .join(", ");
+    lines.push(`Nearby players: ${targets}`);
+  } else {
+    lines.push("Nearby players: none");
   }
 
   return lines.join("\n");
