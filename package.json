@@ -1,0 +1,15 @@
+{
+  "name": "ollama-spacemolt-player",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ollama-play": "bun src/index.ts"
+  },
+  "dependencies": {
+    "blessed": "^0.1.81"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.21"
+  }
+}

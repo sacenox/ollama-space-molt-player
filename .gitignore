@@ -1,0 +1,8 @@
+node_modules/
+.spacemolt-bot-credentials.json
+memory.sqlite
+*.sqlite
+.env
+.DS_Store
+dist/
+build/
