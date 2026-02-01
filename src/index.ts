@@ -32,7 +32,7 @@ import {
 	formatWelcome,
 	type OkContext,
 } from "./tui/formatters";
-import type { Credentials, PersonalityType } from "./types";
+import type { AlignmentType, Credentials, PersonalityType } from "./types";
 import { detectRepetition, isNearbyTarget, sleep } from "./utils";
 
 const memory = new MemoryStore(config.memoryPath);
@@ -80,8 +80,9 @@ async function saveCredentials(
 	username: string,
 	token: string,
 	personality: PersonalityType,
+	alignment: AlignmentType,
 ): Promise<void> {
-	memory.saveCredentials(username, token, personality);
+	memory.saveCredentials(username, token, personality, alignment);
 }
 
 function updateOutput(): void {
@@ -94,6 +95,7 @@ function updateOutput(): void {
 		base: gameState.worldSnapshot.base ?? state.base ?? null,
 		pois: gameState.worldSnapshot.pois ?? [],
 		nearby: state.nearby ?? [],
+		alignment: gameState.credentials?.alignment,
 		personality: gameState.credentials?.personality,
 		tick: state.currentTick,
 		traveling: gameState.travelInProgress,
@@ -215,6 +217,8 @@ async function startActionLoop(): Promise<void> {
 				worldSnapshot: gameState.worldSnapshot,
 				recentHistory,
 				currentGoal: gameState.currentGoal,
+				empire: client.state.player?.empire,
+				alignment: gameState.credentials?.alignment,
 				personality: gameState.credentials?.personality,
 				repetitionWarning,
 			});
@@ -391,12 +395,14 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 				gameState.pendingRegistration.username,
 				token,
 				gameState.pendingRegistration.personality,
+				gameState.pendingRegistration.alignment,
 			);
 
 			gameState.credentials = {
 				username: gameState.pendingRegistration.username,
 				token: token,
 				personality: gameState.pendingRegistration.personality,
+				alignment: gameState.pendingRegistration.alignment,
 			};
 
 			output.log(

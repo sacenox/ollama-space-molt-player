@@ -1,12 +1,12 @@
 import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
-import { PERSONALITY_ARCHETYPES } from "./constants";
+import { ALIGNMENT_DESCRIPTIONS, PERSONALITY_ARCHETYPES } from "./constants";
 import type { OllamaAgent } from "./ollama";
 import type { OutputInterface } from "./output-interface";
 import { buildRegistrationPrompt } from "./prompt";
 import { formatAiThinking, formatSystemMessage } from "./tui/formatters";
-import type { RegistrationChoice } from "./types";
-import { isValidEmpire, isValidPersonality } from "./utils";
+import type { AlignmentType, RegistrationChoice } from "./types";
+import { isValidAlignment, isValidEmpire, isValidPersonality } from "./utils";
 
 export async function runRegistrationFlow(
 	output: OutputInterface,
@@ -34,6 +34,9 @@ export async function runRegistrationFlow(
 			}
 			const username = String(result.json.username ?? "").trim();
 			const empire = String(result.json.empire ?? "").trim() as EmpireID;
+			const alignment = String(
+				result.json.alignment ?? "neutral",
+			).trim() as AlignmentType;
 			const personality = String(
 				result.json.personality ?? "",
 			).trim() as typeof result.json.personality;
@@ -44,6 +47,7 @@ export async function runRegistrationFlow(
 			if (
 				!username ||
 				!isValidEmpire(empire) ||
+				!isValidAlignment(alignment) ||
 				!isValidPersonality(personality)
 			) {
 				throw new Error("Invalid registration response");
@@ -52,17 +56,19 @@ export async function runRegistrationFlow(
 			const choice: RegistrationChoice = {
 				username,
 				empire,
+				alignment,
 				personality,
 				personality_reason: personalityReason,
 			};
 
+			const alignmentInfo = ALIGNMENT_DESCRIPTIONS[alignment];
 			const personalityInfo = PERSONALITY_ARCHETYPES[personality];
 			output.log(
 				formatSystemMessage(`Registering new account: ${username} (${empire})`),
 			);
 			output.log(
 				formatSystemMessage(
-					`Chosen personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
+					`Chosen alignment: ${alignmentInfo.name}, personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
 				),
 			);
 			client.register(username, empire);
@@ -80,11 +86,12 @@ export async function runRegistrationFlow(
 	const fallbackChoice: RegistrationChoice = {
 		username: fallback,
 		empire: "solarian",
+		alignment: "neutral",
 		personality: "pragmatist",
 	};
 	output.log(
 		formatSystemMessage(
-			`Falling back to account: ${fallback} (solarian, pragmatist)`,
+			`Falling back to account: ${fallback} (solarian, neutral, pragmatist)`,
 		),
 	);
 	client.register(fallback, "solarian");

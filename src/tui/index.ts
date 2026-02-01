@@ -3,6 +3,7 @@
 import blessed from "blessed";
 import type { Base, Player, POI, Ship, System } from "../../client/src/types";
 import type { PersonalityType } from "../actions";
+import type { AlignmentType } from "../types";
 import { applyColor, COLORS, THRESHOLDS } from "./colors";
 import type { FormattedMessage } from "./formatters";
 import { computeLayout, createBoxOptions } from "./layout";
@@ -23,6 +24,7 @@ export interface TuiUpdateData {
 	base?: Base | null;
 	pois?: Array<{ id: string; name: string; type?: string }>;
 	nearby?: Array<{ player_id?: string; username?: string }>;
+	alignment?: AlignmentType;
 	personality?: PersonalityType;
 	tick?: number;
 	traveling?: boolean;
@@ -204,6 +206,7 @@ export class Tui {
 		if (data.base !== undefined) this.state.base = data.base;
 		if (data.pois !== undefined) this.state.pois = data.pois;
 		if (data.nearby !== undefined) this.state.nearby = data.nearby;
+		if (data.alignment !== undefined) this.state.alignment = data.alignment;
 		if (data.personality !== undefined)
 			this.state.personality = data.personality;
 		if (data.tick !== undefined) this.state.tick = data.tick;
@@ -246,6 +249,7 @@ export class Tui {
 		const playerShipData: PlayerShipData = {
 			player: this.state.player ?? null,
 			ship: this.state.ship ?? null,
+			alignment: this.state.alignment,
 			personality: this.state.personality,
 			tick: this.state.tick ?? 0,
 		};

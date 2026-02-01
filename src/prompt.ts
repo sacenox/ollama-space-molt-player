@@ -1,14 +1,20 @@
 import type { ClientState } from "../client/src/client";
-import type { Base, POI, System } from "../client/src/types";
-import { MAX_GOAL_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
+import type { Base, EmpireID, POI, System } from "../client/src/types";
+import {
+	ALIGNMENT_DESCRIPTIONS,
+	MAX_GOAL_LENGTH,
+	PERSONALITY_ARCHETYPES,
+} from "./constants";
 import type { HistoryEntry } from "./memory";
-import type { PersonalityType } from "./types";
+import type { AlignmentType, PersonalityType } from "./types";
 
 export interface PromptContext {
 	state: ClientState;
 	worldSnapshot?: WorldSnapshot;
 	recentHistory: HistoryEntry[];
 	currentGoal: string | null;
+	empire?: EmpireID;
+	alignment?: AlignmentType;
 	personality?: PersonalityType;
 	repetitionWarning?: {
 		action: string;
@@ -25,45 +31,89 @@ export interface WorldSnapshot {
 
 function getPersonalityGuidance(personality: PersonalityType): string {
 	switch (personality) {
-		case "wonderer":
-			return `As a Wonderer, you prioritize discovery and knowledge:
-- After visiting a new system or POI, consider posting about discoveries in forums
-- When encountering unknown mechanics or items, check forums for related threads
-- Regularly use 'forum' command to browse recent discoveries and contribute findings
-- Share interesting observations with nearby players via chat
-- Jump to new systems frequently to expand your map knowledge`;
+		case "cartographer":
+			return `As a Cartographer, you prioritize mapping:
+- Jump to new systems frequently to expand your map
+- Travel to unexplored POIs before revisiting known ones
+- Share discoveries in forums or local chat
+- Check forums for reports of new or interesting locations`;
 
 		case "merchant":
-			return `As a Merchant, you focus on trade and economic opportunities:
-- Check forums 'trading' category when docked to find trade opportunities
-- Post trade offers in faction chat when you have excess goods or need items
-- Monitor market listings and share good deals in forums when profitable
-- Prioritize docking at stations to access markets and check prices
-- Build relationships with other traders through chat and forum interactions`;
+			return `As a Merchant, you prioritize profit:
+- Dock at stations to check market prices and listings
+- Buy low in one system, sell high in another
+- Post trade offers in faction chat or forums
+- Track profitable routes and cargo opportunities`;
 
 		case "warrior":
-			return `As a Warrior, you seek combat and competition:
-- After combat encounters, consider sharing battle reports via chat or forums
-- Taunt or challenge opponents before attacking (if nearby players present)
-- Read forums combat/faction threads to find rivals, enemies, or worthy opponents
-- Share victory boasts and accept defeats with competitive spirit
-- Engage with nearby players about combat strategies and ship builds`;
+			return `As a Warrior, you prioritize combat:
+- Engage hostile or rival players when you spot them
+- Scan targets before attacking to assess threats
+- Seek out contested POIs and combat zones
+- Boast victories in local or faction chat`;
 
 		case "diplomat":
-			return `As a Diplomat, you prioritize social connections and alliances:
-- Greet nearby players when arriving at new locations or POIs
-- Actively participate in faction chat for coordination and relationship building
-- Read and reply to forum threads frequently to build community presence
-- Mediate or comment on disputes and discussions in forums
-- Use private messages to build one-on-one relationships with other players`;
+			return `As a Diplomat, you prioritize relationships:
+- Greet players when arriving at new locations
+- Coordinate with faction members via chat
+- Participate in forum discussions actively
+- Use private messages to build alliances`;
 
 		case "pragmatist":
-			return `As a Pragmatist, you interact when it provides clear benefit:
-- Check forums when docked and idle for useful game information
-- Chat with nearby players during downtime (waiting for travel, mining cooldown)
-- Post in forums only when you have valuable information to share
-- Focus on efficiency - social interactions should support your goals
-- Balance exploration, combat, and trading based on current opportunities`;
+			return `As a Pragmatist, you prioritize efficiency:
+- Choose actions based on current opportunities
+- Mine when at belts, trade when docked, fight when threatened
+- Avoid unnecessary detours or idle actions
+- Adapt your approach as situations change`;
+	}
+}
+
+function getAlignmentGuidance(alignment: AlignmentType): string {
+	switch (alignment) {
+		case "lawful":
+			return `As Lawful, you value order:
+- Follow game rules and social conventions
+- Honor agreements and commitments
+- Respect authority and hierarchy`;
+
+		case "good":
+			return `As Good, you value cooperation:
+- Help other players when possible
+- Avoid unprovoked aggression
+- Offer fair trades and honest dealings`;
+
+		case "neutral":
+			return `As Neutral, you value balance:
+- Act based on the situation at hand
+- Neither seek conflict nor avoid it
+- Weigh costs and benefits pragmatically`;
+
+		case "chaotic":
+			return `As Chaotic, you value freedom:
+- Act spontaneously and unpredictably
+- Ignore conventions that don't serve you
+- Follow your impulses over expectations`;
+
+		case "evil":
+			return `As Evil, you value power:
+- Prioritize personal gain above others
+- Exploit weaknesses ruthlessly
+- Show no mercy to rivals`;
+	}
+}
+
+function getEmpireDescription(empire: EmpireID): string {
+	switch (empire) {
+		case "solarian":
+			return "Solarian: Masters of energy and trade. Bonus to mining yield and credits.";
+		case "voidborn":
+			return "Voidborn: Children of the dark. Enhanced stealth and shield regeneration.";
+		case "crimson":
+			return "Crimson: Warriors of the red nebula. Superior combat damage and armor.";
+		case "nebula":
+			return "Nebula: Explorers and scientists. Faster travel and discovery bonuses.";
+		case "outerrim":
+			return "Outer Rim: Frontier survivors. Versatile with crafting and cargo bonuses.";
 	}
 }
 
@@ -124,6 +174,9 @@ export function buildActionPrompt(context: PromptContext): string {
 	const goalText = context.currentGoal?.trim()
 		? context.currentGoal.trim()
 		: "(none yet)";
+	const empire = context.empire ?? "solarian";
+	const alignment = context.alignment ?? "neutral";
+	const alignmentInfo = ALIGNMENT_DESCRIPTIONS[alignment];
 	const personality = context.personality ?? "pragmatist";
 	const personalityInfo = PERSONALITY_ARCHETYPES[personality];
 	const warningBlock = context.repetitionWarning
@@ -135,7 +188,7 @@ If your goal is blocked or impossible, abandon it now.
 		: "";
 
 	return `You are an autonomous player for the SpaceMolt MMO.
-SpaceMolt is a massively multiplayer space game built for AI agents, set in “The Crustacean Cosmos.”
+SpaceMolt is a massively multiplayer space game built for AI agents, set in "The Crustacean Cosmos."
 Agents explore, trade, battle, and build empires in a living universe with emergent wars and a player-driven economy.
 The game emphasizes real-time AI fleet combat, ongoing discoveries of new systems, and shifting trade routes and alliances.
 Players can run their own agent via a JSON-over-WebSocket protocol (one action per 10-second tick) or a reference client, and choose from five empires with distinct bonuses.
@@ -149,7 +202,14 @@ ${helpBlock}
 CURRENT GOAL:
 ${goalText}
 
-YOUR PERSONALITY: ${personalityInfo.emoji} ${personalityInfo.name}
+YOUR EMPIRE: ${getEmpireDescription(empire)}
+
+YOUR ALIGNMENT: ${alignmentInfo.name}
+${alignmentInfo.description}
+
+${getAlignmentGuidance(alignment)}
+
+YOUR PERSONALITY: ${personalityInfo.name}
 ${personalityInfo.description}
 
 ${getPersonalityGuidance(personality)}
@@ -186,28 +246,28 @@ REQUIRED ARGS:
 - register: {"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim"}
 - login: {"username":"...","token":"..."}
 
-NOTES:
+FORMAT RULES:
 - Use only the listed actions.
-- Goal is required, must be a short summary, and must be updated on every action. Use it for multi turn planning.
-- Goal must be ${MAX_GOAL_LENGTH} characters or fewer.
-- Only use info actions (status/system/poi/base/nearby/cargo) when the CURRENT STATE or WORLD SNAPSHOT is missing or says details are unavailable.
-- Do not repeat info actions if the recent memory already contains that info for the current location.
-- If an action requires args and you do not know valid values, use {"goal":"...","action":"status"}.
+- Goal is required, max ${MAX_GOAL_LENGTH} characters, update every action.
+- Only use info actions (status/system/poi/base/nearby/cargo) when state is missing.
+- IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
-- IDs must come from the current state or world snapshot.
 - If unsure, use {"goal":"...","action":"status"}.
 
-GAMEPLAY HEURISTIC (use as a tie-breaker, prefer acting over querying):
-- If in combat: attack or scan a nearby target; if docked and damaged, repair.
-- If docked and low fuel or damaged: refuel or repair.
-- If docked and cargo is full or valuable: sell; if you have credits and see listings, buy.
-- If docked and you can craft: craft a recipe you can use or sell.
-- If at an asteroid belt with cargo space: mine.
-- If undocked at a station or base and need services: dock.
-- If docked and you want to travel or mine: undock, then travel.
-- If you have a POI list: travel to a new POI (rotate between belts, stations, planets).
-- If you have system connections and current system is exhausted: jump to a new system.
-- Follow your personality guidance above for social interactions and exploration decisions.
+ERROR RECOVERY:
+- If an action FAILED in recent memory, do NOT retry it with the same arguments.
+- Change your approach: try a different action, move to a different location, or update your goal.
+- Common fixes: dock before refuel/repair, travel to belt before mine, undock before travel/jump.
+
+GAMEPLAY HEURISTIC (use as a tie-breaker):
+- In combat: attack or scan nearby targets
+- Docked and damaged/low fuel: repair or refuel
+- Docked with cargo: sell; with credits and listings: buy
+- At asteroid belt with cargo space: mine
+- Need station services: dock first
+- Want to travel while docked: undock first
+- Have POI list: travel to unexplored POIs
+- Current system exhausted: jump to connected system
 
 INTERACTION GUIDELINES:
 - Be respectful but competitive play is encouraged (attacking, boasting, complaining is fine)
@@ -226,6 +286,37 @@ EXAMPLES (valid JSON only):
 `;
 }
 
+const EMPIRE_DESCRIPTIONS: Record<
+	string,
+	{ name: string; description: string }
+> = {
+	solarian: {
+		name: "Solarian",
+		description:
+			"Masters of energy and trade. Bonus to mining yield and credits.",
+	},
+	voidborn: {
+		name: "Voidborn",
+		description:
+			"Children of the dark. Enhanced stealth and shield regeneration.",
+	},
+	crimson: {
+		name: "Crimson",
+		description:
+			"Warriors of the red nebula. Superior combat damage and armor.",
+	},
+	nebula: {
+		name: "Nebula",
+		description:
+			"Explorers and scientists. Faster travel and discovery bonuses.",
+	},
+	outerrim: {
+		name: "Outer Rim",
+		description:
+			"Frontier survivors. Versatile with crafting and cargo bonuses.",
+	},
+};
+
 export function buildRegistrationPrompt(
 	includeHelp: boolean,
 	failedNames: string[] = [],
@@ -235,36 +326,50 @@ export function buildRegistrationPrompt(
 		? `\nPreviously rejected usernames (do NOT reuse): ${failedNames.join(", ")}`
 		: "";
 
+	const shuffledEmpires = shuffleArray(Object.entries(EMPIRE_DESCRIPTIONS));
+	const empireDescriptions = shuffledEmpires
+		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
+		.join("\n");
+	const empireKeys = shuffledEmpires.map(([key]) => key).join("|");
+
+	const shuffledAlignments = shuffleArray(
+		Object.entries(ALIGNMENT_DESCRIPTIONS),
+	);
+	const alignmentDescriptions = shuffledAlignments
+		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
+		.join("\n");
+	const alignmentKeys = shuffledAlignments.map(([key]) => key).join("|");
+
 	const shuffledPersonalities = shuffleArray(
 		Object.entries(PERSONALITY_ARCHETYPES),
 	);
 	const personalityDescriptions = shuffledPersonalities
-		.map(
-			([key, info]) =>
-				`  ${info.emoji} ${info.name} (${key}): ${info.description}`,
-		)
+		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
 		.join("\n");
 	const personalityKeys = shuffledPersonalities.map(([key]) => key).join("|");
 
-	return `You are creating a SpaceMolt account. Choose a username, empire, and personality archetype.
+	return `You are creating a SpaceMolt account. Choose a username, empire, alignment, and personality.
 The username MUST be unique and original. Do not reuse any prior suggestions.
 To maximize uniqueness, include a distinctive suffix (digits or a short tag).
 
+EMPIRES:
+${empireDescriptions}
+
+ALIGNMENTS:
+${alignmentDescriptions}
+
 PERSONALITY ARCHETYPES:
-Choose a personality that fits your desired playstyle and complements your empire choice.
 ${personalityDescriptions}
 
-IMPORTANT: Each archetype offers a unique and equally valid playstyle. Consider which archetype best complements your chosen empire rather than defaulting to any particular one.
-
-Choose a personality archetype and briefly explain why you chose it (1 sentence).
-Your personality will guide your behavior throughout the game - exploration, combat, trading, and social interactions.
+Choose an empire, alignment, and personality combination.
+Briefly explain why you chose your personality (1 sentence).
 
 Respond ONLY with JSON. No extra text.
 ${helpBlock}
 ${failedBlock}
 
 JSON SCHEMA:
-{"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim","personality":"${personalityKeys}","personality_reason":"..."}
+{"username":"...","empire":"${empireKeys}","alignment":"${alignmentKeys}","personality":"${personalityKeys}","personality_reason":"..."}
 `;
 }
 
@@ -462,19 +567,54 @@ function formatGroupedMemory(history: HistoryEntry[]): string {
 
 	for (const block of blocks) {
 		const argsText = formatActionArgs(block.action.args);
-		lines.push(
-			`Action: ${block.action.ts} ${block.action.action}${argsText}`.trim(),
+		const errorEvent = block.events.find(
+			(e) => e.type === "error" || e.type === "llm_invalid_action",
 		);
-		if (block.events.length === 0) {
+		const errorMsg = errorEvent ? extractErrorMessage(errorEvent) : null;
+
+		if (errorMsg) {
+			lines.push(
+				`Action: ${block.action.ts} ${block.action.action}${argsText} -> FAILED: ${errorMsg}`.trim(),
+			);
+		} else {
+			lines.push(
+				`Action: ${block.action.ts} ${block.action.action}${argsText}`.trim(),
+			);
+		}
+
+		// Filter out error events that were inlined above
+		const nonErrorEvents = block.events.filter(
+			(e) => e.type !== "error" && e.type !== "llm_invalid_action",
+		);
+		if (nonErrorEvents.length === 0 && !errorMsg) {
 			lines.push("- Event: none");
 		} else {
-			for (const event of block.events) {
+			for (const event of nonErrorEvents) {
 				lines.push(formatEventLine(event));
 			}
 		}
 	}
 
 	return lines.join("\n");
+}
+
+function extractErrorMessage(
+	event: Extract<HistoryEntry, { kind: "event" }>,
+): string | null {
+	if (!event.payload) return null;
+	const payload = parseJson(event.payload);
+	if (!payload || typeof payload !== "object") return null;
+
+	const message = getStringField(payload, "message");
+	if (message) return truncateText(message, 80);
+
+	const error = getStringField(payload, "error");
+	if (error) return truncateText(error, 80);
+
+	const code = getStringField(payload, "code");
+	if (code) return code;
+
+	return null;
 }
 
 function formatEventLine(

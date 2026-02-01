@@ -3,12 +3,15 @@
 import type { Player, Ship } from "../../../client/src/types";
 import type { PersonalityType } from "../../actions";
 import { PERSONALITY_ARCHETYPES } from "../../actions";
+import { ALIGNMENT_DESCRIPTIONS } from "../../constants";
+import type { AlignmentType } from "../../types";
 import { applyBold, applyColor, COLORS } from "../colors";
 import { formatLine, formatResourceBar } from "../utils";
 
 export interface PlayerShipData {
 	player: Player | null;
 	ship: Ship | null;
+	alignment?: AlignmentType;
 	personality?: PersonalityType;
 	tick: number;
 }
@@ -24,6 +27,11 @@ export function renderPlayerShipPanel(data: PlayerShipData): string {
 	lines.push(applyColor(applyBold("== Player =="), COLORS.PANEL_TITLE));
 	lines.push(formatLine("Name", data.player.username, COLORS.PANEL_LABEL));
 	lines.push(formatLine("Empire", data.player.empire, COLORS.PANEL_LABEL));
+
+	if (data.alignment) {
+		const alignInfo = ALIGNMENT_DESCRIPTIONS[data.alignment];
+		lines.push(formatLine("Alignment", alignInfo.name, COLORS.PANEL_LABEL));
+	}
 
 	if (data.personality) {
 		const info = PERSONALITY_ARCHETYPES[data.personality];

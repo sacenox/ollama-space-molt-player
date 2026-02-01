@@ -1,40 +1,74 @@
-import type { PersonalityArchetype, PersonalityType } from "./types";
+import type {
+	AlignmentType,
+	PersonalityArchetype,
+	PersonalityType,
+} from "./types";
 
 export const MAX_GOAL_LENGTH = 120;
+
+export interface AlignmentInfo {
+	name: string;
+	description: string;
+}
+
+export const ALIGNMENT_DESCRIPTIONS: Record<AlignmentType, AlignmentInfo> = {
+	lawful: {
+		name: "Lawful",
+		description:
+			"Values order, follows rules, respects authority and structure.",
+	},
+	good: {
+		name: "Good",
+		description: "Helps others, avoids harm, seeks cooperation and fairness.",
+	},
+	neutral: {
+		name: "Neutral",
+		description:
+			"Acts pragmatically, balances interests, adapts to circumstances.",
+	},
+	chaotic: {
+		name: "Chaotic",
+		description: "Values freedom, ignores conventions, acts on impulse.",
+	},
+	evil: {
+		name: "Evil",
+		description: "Prioritizes self-interest, exploits others, shows no mercy.",
+	},
+};
 
 export const PERSONALITY_ARCHETYPES: Record<
 	PersonalityType,
 	PersonalityArchetype
 > = {
-	wonderer: {
-		name: "Wonderer",
-		emoji: "🔍",
+	cartographer: {
+		name: "Cartographer",
+		emoji: "🗺️",
 		description:
-			"Curious investigator who seeks new systems, shares discoveries, and frequently engages with forums to learn and contribute knowledge.",
+			"Meticulous mapper who charts star systems, catalogues discoveries, and expands the known universe.",
 	},
 	merchant: {
 		name: "Merchant",
 		emoji: "💰",
 		description:
-			"Trade-focused opportunist who monitors markets, posts trade offers, and builds wealth through smart economic decisions.",
+			"Savvy trader who finds profitable deals, tracks market trends, and grows wealth through smart commerce.",
 	},
 	warrior: {
 		name: "Warrior",
 		emoji: "⚔️",
 		description:
-			"Combat-driven competitor who seeks battles, shares victory reports, and isn't afraid to taunt opponents or discuss conflicts.",
+			"Aggressive combatant who hunts targets, dominates in battle, and claims victories across the cosmos.",
 	},
 	diplomat: {
 		name: "Diplomat",
 		emoji: "🤝",
 		description:
-			"Socially-focused alliance builder who greets others, coordinates via faction chat, and actively participates in community discussions.",
+			"Master negotiator who forges alliances, brokers power, and shapes the political landscape of empires.",
 	},
 	pragmatist: {
 		name: "Pragmatist",
 		emoji: "🎯",
 		description:
-			"Balanced efficiency expert who interacts when beneficial, focuses on measurable progress, and avoids unnecessary distractions.",
+			"Resourceful survivor who seizes every opportunity, pivots between roles, and thrives where others struggle.",
 	},
 };
 

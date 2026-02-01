@@ -1,11 +1,13 @@
 import type { EmpireID } from "../client/src/types";
 
 export type PersonalityType =
-	| "wonderer"
+	| "cartographer"
 	| "merchant"
 	| "warrior"
 	| "diplomat"
 	| "pragmatist";
+
+export type AlignmentType = "lawful" | "good" | "neutral" | "chaotic" | "evil";
 
 export interface ActionDecision {
 	action: string;
@@ -17,12 +19,14 @@ export interface Credentials {
 	username: string;
 	token: string;
 	personality: PersonalityType;
+	alignment: AlignmentType;
 }
 
 export interface RegistrationChoice {
 	username: string;
 	empire: EmpireID;
 	personality: PersonalityType;
+	alignment: AlignmentType;
 	personality_reason?: string;
 	token?: string;
 }

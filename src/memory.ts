@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { Credentials, PersonalityType } from "./types";
+import type { AlignmentType, Credentials, PersonalityType } from "./types";
 
 export interface Snapshot {
 	tick: number;
@@ -89,24 +89,45 @@ export class MemoryStore {
         ts TEXT NOT NULL,
         username TEXT NOT NULL,
         token TEXT NOT NULL,
-        personality TEXT NOT NULL
+        personality TEXT NOT NULL,
+        alignment TEXT NOT NULL DEFAULT 'neutral'
       );
     `);
+		this.migrate();
+	}
+
+	private migrate(): void {
+		// Add alignment column if it doesn't exist (for existing DBs)
+		const columns = this.db.query("PRAGMA table_info(credentials)").all() as {
+			name: string;
+		}[];
+		const hasAlignment = columns.some((col) => col.name === "alignment");
+		if (!hasAlignment) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN alignment TEXT NOT NULL DEFAULT 'neutral'",
+			);
+		}
 	}
 
 	getCredentials(): Credentials | null {
 		const row = this.db
 			.query(
-				"SELECT username, token, personality FROM credentials ORDER BY id DESC LIMIT 1",
+				"SELECT username, token, personality, alignment FROM credentials ORDER BY id DESC LIMIT 1",
 			)
 			.get() as
-			| { username?: string; token?: string; personality?: string }
+			| {
+					username?: string;
+					token?: string;
+					personality?: string;
+					alignment?: string;
+			  }
 			| undefined;
 		if (!row || !row.username || !row.token || !row.personality) return null;
 		return {
 			username: row.username,
 			token: row.token,
 			personality: row.personality as PersonalityType,
+			alignment: (row.alignment as AlignmentType) ?? "neutral",
 		};
 	}
 
@@ -114,12 +135,13 @@ export class MemoryStore {
 		username: string,
 		token: string,
 		personality: PersonalityType,
+		alignment: AlignmentType,
 	): void {
 		this.db
 			.query(
-				"INSERT INTO credentials (ts, username, token, personality) VALUES (?, ?, ?, ?)",
+				"INSERT INTO credentials (ts, username, token, personality, alignment) VALUES (?, ?, ?, ?, ?)",
 			)
-			.run(nowIso(), username, token, personality);
+			.run(nowIso(), username, token, personality, alignment);
 	}
 
 	appendAction(
