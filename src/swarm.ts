@@ -3,7 +3,12 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { isValidAlignment, isValidEmpire, isValidPersonality } from "./utils";
+import {
+	isValidAlignment,
+	isValidEmpire,
+	isValidPersonality,
+	isValidSpeechStyle,
+} from "./utils";
 
 const DEFAULT_COUNT = 5;
 const DEFAULT_PREFIX = "swarm";
@@ -22,6 +27,7 @@ const { values } = parseArgs({
 		empire: { type: "string" },
 		alignment: { type: "string" },
 		personality: { type: "string" },
+		"speech-style": { type: "string", short: "s" },
 	},
 	strict: false,
 });
@@ -33,6 +39,7 @@ type SwarmConfig = {
 	empire: string | null;
 	alignment: string | null;
 	personality: string | null;
+	speechStyle: string | null;
 };
 
 function logSwarm(message: string): void {
@@ -139,6 +146,22 @@ function parsePersonality(raw: unknown): string | null {
 	return value;
 }
 
+function parseSpeechStyle(raw: unknown): string | null {
+	if (raw === undefined) return null;
+	if (typeof raw !== "string" || raw.trim() === "") {
+		console.error("Error: --speech-style requires a value");
+		process.exit(1);
+	}
+	const value = raw.trim().toLowerCase();
+	if (!isValidSpeechStyle(value)) {
+		console.error(
+			"Error: --speech-style must be one of: mythic, punny, gritty, scholarly",
+		);
+		process.exit(1);
+	}
+	return value;
+}
+
 const swarmConfig: SwarmConfig = {
 	count: parseCount(values.count),
 	prefix: parsePrefix(values.prefix),
@@ -146,6 +169,7 @@ const swarmConfig: SwarmConfig = {
 	empire: parseEmpire(values.empire),
 	alignment: parseAlignment(values.alignment),
 	personality: parsePersonality(values.personality),
+	speechStyle: parseSpeechStyle(values["speech-style"]),
 };
 
 const children = new Map<string, ReturnType<typeof spawn>>();
@@ -189,6 +213,9 @@ function buildArgs(instanceName: string): string[] {
 	}
 	if (swarmConfig.personality) {
 		args.push("--personality", swarmConfig.personality);
+	}
+	if (swarmConfig.speechStyle) {
+		args.push("--speech-style", swarmConfig.speechStyle);
 	}
 	return args;
 }
@@ -317,6 +344,8 @@ function startSwarm(): void {
 		logSwarm(`override alignment=${swarmConfig.alignment}`);
 	if (swarmConfig.personality)
 		logSwarm(`override personality=${swarmConfig.personality}`);
+	if (swarmConfig.speechStyle)
+		logSwarm(`override speech-style=${swarmConfig.speechStyle}`);
 
 	swarmMembers = buildSwarmMembers();
 	for (const name of swarmMembers) {

@@ -37,6 +37,7 @@ import type {
 	Credentials,
 	PersonalityType,
 	RegistrationOverrides,
+	SpeechStyleType,
 } from "./types";
 import { detectRepetition, isNearbyTarget, sleep } from "./utils";
 
@@ -66,6 +67,7 @@ const registrationOverrides: RegistrationOverrides = {
 	empire: config.empire ?? undefined,
 	alignment: config.alignment ?? undefined,
 	personality: config.personality ?? undefined,
+	speech_style: config.speechStyle ?? undefined,
 };
 let actionLoopRunning = false;
 const REPETITION_THRESHOLD = 3;
@@ -91,8 +93,9 @@ async function saveCredentials(
 	token: string,
 	personality: PersonalityType,
 	alignment: AlignmentType,
+	speechStyle: SpeechStyleType,
 ): Promise<void> {
-	memory.saveCredentials(username, token, personality, alignment);
+	memory.saveCredentials(username, token, personality, alignment, speechStyle);
 }
 
 function updateOutput(): void {
@@ -230,6 +233,7 @@ async function startActionLoop(): Promise<void> {
 				empire: client.state.player?.empire,
 				alignment: gameState.credentials?.alignment,
 				personality: gameState.credentials?.personality,
+				speechStyle: gameState.credentials?.speech_style,
 				repetitionWarning,
 			});
 
@@ -407,6 +411,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 				token,
 				gameState.pendingRegistration.personality,
 				gameState.pendingRegistration.alignment,
+				gameState.pendingRegistration.speech_style,
 			);
 
 			gameState.credentials = {
@@ -414,6 +419,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 				token: token,
 				personality: gameState.pendingRegistration.personality,
 				alignment: gameState.pendingRegistration.alignment,
+				speech_style: gameState.pendingRegistration.speech_style,
 			};
 
 			output.log(
@@ -488,11 +494,14 @@ client.on<ErrorPayload>("error", (data) => {
 			const fallbackAlignment = registrationOverrides.alignment ?? "neutral";
 			const fallbackPersonality =
 				registrationOverrides.personality ?? "pragmatist";
+			const fallbackSpeechStyle =
+				registrationOverrides.speech_style ?? "mythic";
 			gameState.pendingRegistration = {
 				username: fallback,
 				empire: fallbackEmpire,
 				alignment: fallbackAlignment,
 				personality: fallbackPersonality,
+				speech_style: fallbackSpeechStyle,
 			};
 			client.register(fallback, fallbackEmpire);
 		}

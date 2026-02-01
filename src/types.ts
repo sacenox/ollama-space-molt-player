@@ -9,6 +9,8 @@ export type PersonalityType =
 
 export type AlignmentType = "lawful" | "good" | "neutral" | "chaotic" | "evil";
 
+export type SpeechStyleType = "mythic" | "punny" | "gritty" | "scholarly";
+
 export interface ActionDecision {
 	action: string;
 	args?: Record<string, unknown>;
@@ -20,6 +22,7 @@ export interface Credentials {
 	token: string;
 	personality: PersonalityType;
 	alignment: AlignmentType;
+	speech_style: SpeechStyleType;
 }
 
 export interface RegistrationChoice {
@@ -27,6 +30,7 @@ export interface RegistrationChoice {
 	empire: EmpireID;
 	personality: PersonalityType;
 	alignment: AlignmentType;
+	speech_style: SpeechStyleType;
 	personality_reason?: string;
 	token?: string;
 }
@@ -35,6 +39,7 @@ export interface RegistrationOverrides {
 	empire?: EmpireID;
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
+	speech_style?: SpeechStyleType;
 }
 
 export interface PersonalityArchetype {

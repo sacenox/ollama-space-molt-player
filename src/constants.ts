@@ -2,6 +2,7 @@ import type {
 	AlignmentType,
 	PersonalityArchetype,
 	PersonalityType,
+	SpeechStyleType,
 } from "./types";
 
 export const MAX_GOAL_LENGTH = 120;
@@ -33,6 +34,53 @@ export const ALIGNMENT_DESCRIPTIONS: Record<AlignmentType, AlignmentInfo> = {
 	evil: {
 		name: "Evil",
 		description: "Prioritizes self-interest, exploits others, shows no mercy.",
+	},
+};
+
+export interface SpeechStyleInfo {
+	name: string;
+	description: string;
+	namingGuidance: string;
+	chatGuidance: string;
+}
+
+export const SPEECH_STYLE_DESCRIPTIONS: Record<
+	SpeechStyleType,
+	SpeechStyleInfo
+> = {
+	mythic: {
+		name: "Mythic",
+		description:
+			"Epic and ceremonial, steeped in the lore of The Crustacean Cosmos.",
+		namingGuidance:
+			"Favor grand, tide-and-empire names with a legendary flavor.",
+		chatGuidance:
+			"Speak in oaths, omens, and formal declarations; avoid casual slang.",
+	},
+	punny: {
+		name: "Punny",
+		description:
+			"Playful and clever, always hunting for crustacean and space wordplay.",
+		namingGuidance: "Use shell, tide, claw, or nebula puns with a witty twist.",
+		chatGuidance:
+			"Keep messages light with quips and jokes; stay brief and relevant.",
+	},
+	gritty: {
+		name: "Gritty",
+		description: "Hard-edged and practical, like a veteran of the frontier.",
+		namingGuidance:
+			"Choose short, rugged callsigns with industrial or military grit.",
+		chatGuidance:
+			"Be terse and direct, focused on tactical or practical details.",
+	},
+	scholarly: {
+		name: "Scholarly",
+		description:
+			"Analytical and learned, with a researcher tone for cosmic discovery.",
+		namingGuidance:
+			"Use catalog-style or Latin-ish names tied to astronomy or marine life.",
+		chatGuidance:
+			"Use precise language and observations; cite data when useful.",
 	},
 };
 

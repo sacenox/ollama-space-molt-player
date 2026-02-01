@@ -1,5 +1,10 @@
 import { Database } from "bun:sqlite";
-import type { AlignmentType, Credentials, PersonalityType } from "./types";
+import type {
+	AlignmentType,
+	Credentials,
+	PersonalityType,
+	SpeechStyleType,
+} from "./types";
 
 export interface Snapshot {
 	tick: number;
@@ -90,21 +95,28 @@ export class MemoryStore {
         username TEXT NOT NULL,
         token TEXT NOT NULL,
         personality TEXT NOT NULL,
-        alignment TEXT NOT NULL DEFAULT 'neutral'
+        alignment TEXT NOT NULL DEFAULT 'neutral',
+        speech_style TEXT NOT NULL DEFAULT 'mythic'
       );
     `);
 		this.migrate();
 	}
 
 	private migrate(): void {
-		// Add alignment column if it doesn't exist (for existing DBs)
+		// Add alignment + speech_style columns if they don't exist (for existing DBs)
 		const columns = this.db.query("PRAGMA table_info(credentials)").all() as {
 			name: string;
 		}[];
 		const hasAlignment = columns.some((col) => col.name === "alignment");
+		const hasSpeechStyle = columns.some((col) => col.name === "speech_style");
 		if (!hasAlignment) {
 			this.db.exec(
 				"ALTER TABLE credentials ADD COLUMN alignment TEXT NOT NULL DEFAULT 'neutral'",
+			);
+		}
+		if (!hasSpeechStyle) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN speech_style TEXT NOT NULL DEFAULT 'mythic'",
 			);
 		}
 	}
@@ -112,7 +124,7 @@ export class MemoryStore {
 	getCredentials(): Credentials | null {
 		const row = this.db
 			.query(
-				"SELECT username, token, personality, alignment FROM credentials ORDER BY id DESC LIMIT 1",
+				"SELECT username, token, personality, alignment, speech_style FROM credentials ORDER BY id DESC LIMIT 1",
 			)
 			.get() as
 			| {
@@ -120,6 +132,7 @@ export class MemoryStore {
 					token?: string;
 					personality?: string;
 					alignment?: string;
+					speech_style?: string;
 			  }
 			| undefined;
 		if (!row || !row.username || !row.token || !row.personality) return null;
@@ -128,6 +141,7 @@ export class MemoryStore {
 			token: row.token,
 			personality: row.personality as PersonalityType,
 			alignment: (row.alignment as AlignmentType) ?? "neutral",
+			speech_style: (row.speech_style as SpeechStyleType) ?? "mythic",
 		};
 	}
 
@@ -136,12 +150,13 @@ export class MemoryStore {
 		token: string,
 		personality: PersonalityType,
 		alignment: AlignmentType,
+		speechStyle: SpeechStyleType,
 	): void {
 		this.db
 			.query(
-				"INSERT INTO credentials (ts, username, token, personality, alignment) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO credentials (ts, username, token, personality, alignment, speech_style) VALUES (?, ?, ?, ?, ?, ?)",
 			)
-			.run(nowIso(), username, token, personality, alignment);
+			.run(nowIso(), username, token, personality, alignment, speechStyle);
 	}
 
 	appendAction(

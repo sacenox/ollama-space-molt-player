@@ -1,6 +1,10 @@
 import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
-import { ALIGNMENT_DESCRIPTIONS, PERSONALITY_ARCHETYPES } from "./constants";
+import {
+	ALIGNMENT_DESCRIPTIONS,
+	PERSONALITY_ARCHETYPES,
+	SPEECH_STYLE_DESCRIPTIONS,
+} from "./constants";
 import type { OllamaAgent } from "./ollama";
 import type { OutputInterface } from "./output-interface";
 import { buildRegistrationPrompt } from "./prompt";
@@ -9,8 +13,14 @@ import type {
 	AlignmentType,
 	RegistrationChoice,
 	RegistrationOverrides,
+	SpeechStyleType,
 } from "./types";
-import { isValidAlignment, isValidEmpire, isValidPersonality } from "./utils";
+import {
+	isValidAlignment,
+	isValidEmpire,
+	isValidPersonality,
+	isValidSpeechStyle,
+} from "./utils";
 
 export async function runRegistrationFlow(
 	output: OutputInterface,
@@ -45,18 +55,23 @@ export async function runRegistrationFlow(
 			const personality = String(
 				result.json.personality ?? "",
 			).trim() as typeof result.json.personality;
+			const speechStyle = String(
+				result.json.speech_style ?? "",
+			).trim() as SpeechStyleType;
 			const personalityReason = result.json.personality_reason
 				? String(result.json.personality_reason).trim()
 				: undefined;
 			const resolvedEmpire = overrides.empire ?? empire;
 			const resolvedAlignment = overrides.alignment ?? alignment;
 			const resolvedPersonality = overrides.personality ?? personality;
+			const resolvedSpeechStyle = overrides.speech_style ?? speechStyle;
 
 			if (
 				!username ||
 				!isValidEmpire(resolvedEmpire) ||
 				!isValidAlignment(resolvedAlignment) ||
-				!isValidPersonality(resolvedPersonality)
+				!isValidPersonality(resolvedPersonality) ||
+				!isValidSpeechStyle(resolvedSpeechStyle)
 			) {
 				throw new Error("Invalid registration response");
 			}
@@ -66,11 +81,13 @@ export async function runRegistrationFlow(
 				empire: resolvedEmpire,
 				alignment: resolvedAlignment,
 				personality: resolvedPersonality,
+				speech_style: resolvedSpeechStyle,
 				personality_reason: personalityReason,
 			};
 
 			const alignmentInfo = ALIGNMENT_DESCRIPTIONS[resolvedAlignment];
 			const personalityInfo = PERSONALITY_ARCHETYPES[resolvedPersonality];
+			const speechStyleInfo = SPEECH_STYLE_DESCRIPTIONS[resolvedSpeechStyle];
 			output.log(
 				formatSystemMessage(
 					`Registering new account: ${username} (${resolvedEmpire})`,
@@ -78,7 +95,7 @@ export async function runRegistrationFlow(
 			);
 			output.log(
 				formatSystemMessage(
-					`Chosen alignment: ${alignmentInfo.name}, personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
+					`Chosen alignment: ${alignmentInfo.name}, personality: ${personalityInfo.name}, speech style: ${speechStyleInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
 				),
 			);
 			client.register(username, resolvedEmpire);
@@ -96,15 +113,17 @@ export async function runRegistrationFlow(
 	const fallbackEmpire = overrides.empire ?? "solarian";
 	const fallbackAlignment = overrides.alignment ?? "neutral";
 	const fallbackPersonality = overrides.personality ?? "pragmatist";
+	const fallbackSpeechStyle = overrides.speech_style ?? "mythic";
 	const fallbackChoice: RegistrationChoice = {
 		username: fallback,
 		empire: fallbackEmpire,
 		alignment: fallbackAlignment,
 		personality: fallbackPersonality,
+		speech_style: fallbackSpeechStyle,
 	};
 	output.log(
 		formatSystemMessage(
-			`Falling back to account: ${fallback} (${fallbackEmpire}, ${fallbackAlignment}, ${fallbackPersonality})`,
+			`Falling back to account: ${fallback} (${fallbackEmpire}, ${fallbackAlignment}, ${fallbackPersonality}, ${fallbackSpeechStyle})`,
 		),
 	);
 	client.register(fallback, fallbackEmpire);

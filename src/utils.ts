@@ -1,6 +1,6 @@
 import type { EmpireID } from "../client/src/types";
 import type { StoredAction } from "./memory";
-import type { AlignmentType, PersonalityType } from "./types";
+import type { AlignmentType, PersonalityType, SpeechStyleType } from "./types";
 
 export function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,6 +28,12 @@ export function isValidPersonality(
 		"diplomat",
 		"pragmatist",
 	].includes(personality);
+}
+
+export function isValidSpeechStyle(
+	speechStyle: string,
+): speechStyle is SpeechStyleType {
+	return ["mythic", "punny", "gritty", "scholarly"].includes(speechStyle);
 }
 
 export function isNearbyTarget(

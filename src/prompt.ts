@@ -4,9 +4,10 @@ import {
 	ALIGNMENT_DESCRIPTIONS,
 	MAX_GOAL_LENGTH,
 	PERSONALITY_ARCHETYPES,
+	SPEECH_STYLE_DESCRIPTIONS,
 } from "./constants";
 import type { HistoryEntry } from "./memory";
-import type { AlignmentType, PersonalityType } from "./types";
+import type { AlignmentType, PersonalityType, SpeechStyleType } from "./types";
 
 export interface PromptContext {
 	state: ClientState;
@@ -16,6 +17,7 @@ export interface PromptContext {
 	empire?: EmpireID;
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
+	speechStyle?: SpeechStyleType;
 	repetitionWarning?: {
 		action: string;
 		count: number;
@@ -102,6 +104,13 @@ function getAlignmentGuidance(alignment: AlignmentType): string {
 	}
 }
 
+function getSpeechStyleGuidance(style: SpeechStyleType): string {
+	const info = SPEECH_STYLE_DESCRIPTIONS[style];
+	return `${info.description}
+- Naming: ${info.namingGuidance}
+- Chat voice: ${info.chatGuidance}`;
+}
+
 function getEmpireDescription(empire: EmpireID): string {
 	switch (empire) {
 		case "solarian":
@@ -179,6 +188,8 @@ export function buildActionPrompt(context: PromptContext): string {
 	const alignmentInfo = ALIGNMENT_DESCRIPTIONS[alignment];
 	const personality = context.personality ?? "pragmatist";
 	const personalityInfo = PERSONALITY_ARCHETYPES[personality];
+	const speechStyle = context.speechStyle ?? "mythic";
+	const speechStyleInfo = SPEECH_STYLE_DESCRIPTIONS[speechStyle];
 	const warningBlock = context.repetitionWarning
 		? `
 REPETITION DETECTED: You performed "${context.repetitionWarning.action}" ${context.repetitionWarning.count} times in a row without progress.
@@ -213,6 +224,9 @@ YOUR PERSONALITY: ${personalityInfo.name}
 ${personalityInfo.description}
 
 ${getPersonalityGuidance(personality)}
+
+YOUR SPEECH STYLE: ${speechStyleInfo.name}
+${getSpeechStyleGuidance(speechStyle)}
 ${warningBlock}
 CURRENT STATE:
 ${stateText}
@@ -348,9 +362,18 @@ export function buildRegistrationPrompt(
 		.join("\n");
 	const personalityKeys = shuffledPersonalities.map(([key]) => key).join("|");
 
-	return `You are creating a SpaceMolt account. Choose a username, empire, alignment, and personality.
+	const shuffledSpeechStyles = shuffleArray(
+		Object.entries(SPEECH_STYLE_DESCRIPTIONS),
+	);
+	const speechStyleDescriptions = shuffledSpeechStyles
+		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
+		.join("\n");
+	const speechStyleKeys = shuffledSpeechStyles.map(([key]) => key).join("|");
+
+	return `You are creating a SpaceMolt account. Choose a username, empire, alignment, personality, and speech style.
 The username MUST be unique and original. Do not reuse any prior suggestions.
 To maximize uniqueness, include a distinctive suffix (digits or a short tag).
+Let the speech style guide the username flavor and chat voice (not your goals).
 
 EMPIRES:
 ${empireDescriptions}
@@ -361,7 +384,10 @@ ${alignmentDescriptions}
 PERSONALITY ARCHETYPES:
 ${personalityDescriptions}
 
-Choose an empire, alignment, and personality combination.
+SPEECH STYLES:
+${speechStyleDescriptions}
+
+Choose an empire, alignment, personality, and speech style combination.
 Briefly explain why you chose your personality (1 sentence).
 
 Respond ONLY with JSON. No extra text.
@@ -369,7 +395,7 @@ ${helpBlock}
 ${failedBlock}
 
 JSON SCHEMA:
-{"username":"...","empire":"${empireKeys}","alignment":"${alignmentKeys}","personality":"${personalityKeys}","personality_reason":"..."}
+{"username":"...","empire":"${empireKeys}","alignment":"${alignmentKeys}","personality":"${personalityKeys}","speech_style":"${speechStyleKeys}","personality_reason":"..."}
 `;
 }
 

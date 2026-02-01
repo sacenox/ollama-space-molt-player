@@ -1,8 +1,13 @@
 import { parseArgs } from "node:util";
 
 import type { EmpireID } from "../client/src/types";
-import type { AlignmentType, PersonalityType } from "./types";
-import { isValidAlignment, isValidEmpire, isValidPersonality } from "./utils";
+import type { AlignmentType, PersonalityType, SpeechStyleType } from "./types";
+import {
+	isValidAlignment,
+	isValidEmpire,
+	isValidPersonality,
+	isValidSpeechStyle,
+} from "./utils";
 
 const { values } = parseArgs({
 	args: process.argv.slice(2),
@@ -13,6 +18,7 @@ const { values } = parseArgs({
 		empire: { type: "string", short: "e" },
 		alignment: { type: "string", short: "a" },
 		personality: { type: "string", short: "p" },
+		"speech-style": { type: "string", short: "s" },
 	},
 	strict: false,
 });
@@ -98,12 +104,29 @@ function parsePersonality(raw: unknown): PersonalityType | null {
 	return value;
 }
 
+function parseSpeechStyle(raw: unknown): SpeechStyleType | null {
+	if (raw === undefined) return null;
+	if (typeof raw !== "string" || raw.trim() === "") {
+		console.error("Error: --speech-style requires a value");
+		process.exit(1);
+	}
+	const value = raw.trim().toLowerCase();
+	if (!isValidSpeechStyle(value)) {
+		console.error(
+			"Error: --speech-style must be one of: mythic, punny, gritty, scholarly",
+		);
+		process.exit(1);
+	}
+	return value;
+}
+
 const instanceName = getInstanceName();
 const nonInteractive = values["non-interactive"] === true;
 const maxTicks = parseMaxTicks(values["max-ticks"]);
 const empire = parseEmpire(values.empire);
 const alignment = parseAlignment(values.alignment);
 const personality = parsePersonality(values.personality);
+const speechStyle = parseSpeechStyle(values["speech-style"]);
 
 export const config = {
 	instanceName,
@@ -112,6 +135,7 @@ export const config = {
 	empire,
 	alignment,
 	personality,
+	speechStyle,
 	ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
 	ollamaModel: process.env.OLLAMA_MODEL ?? "qwen3:8b",
 	ollamaTemperature: (() => {
