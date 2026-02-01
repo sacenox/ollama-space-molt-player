@@ -37,6 +37,7 @@ import {
 	formatScanResult,
 	formatSystemMessage,
 	formatWelcome,
+	type OkContext,
 } from "./tui/formatters";
 
 type Credentials = {
@@ -459,6 +460,12 @@ client.on<LoggedInPayload>("logged_in", (data) => {
 	tui.log(formatLoggedIn(data));
 	memory.appendEvent("logged_in", data);
 
+	// Reset travel/jump state on login (handles reconnect case)
+	travelInProgress = false;
+	lastTravelTarget = null;
+	jumpInProgress = false;
+	lastJumpTarget = null;
+
 	// Cache player and ship data
 	cachedPlayer = data.player;
 	cachedShip = data.ship;
@@ -566,7 +573,11 @@ client.on<ScanResultPayload>("scan_result", (data) => {
 });
 
 client.on("ok", (data: Record<string, unknown>) => {
-	tui.log(formatOk(data));
+	const okContext: OkContext = {
+		jumpTarget: lastJumpTarget,
+		travelTarget: lastTravelTarget,
+	};
+	tui.log(formatOk(data, okContext));
 	memory.appendEvent("ok", data);
 	updateWorldSnapshotFromOk(data);
 

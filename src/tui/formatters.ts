@@ -12,6 +12,11 @@ import { applyColor, COLORS } from "./colors";
 
 export type LogCategory = "game" | "ai" | "combat" | "chat" | "system";
 
+export interface OkContext {
+	jumpTarget?: string | null;
+	travelTarget?: string | null;
+}
+
 export interface FormattedMessage {
 	text: string;
 	category: LogCategory;
@@ -117,12 +122,17 @@ export function formatScanResult(data: ScanResultPayload): FormattedMessage {
 }
 
 // OK messages - format based on action type
-export function formatOk(data: Record<string, unknown>): FormattedMessage {
+export function formatOk(
+	data: Record<string, unknown>,
+	context?: OkContext,
+): FormattedMessage {
 	const action = String(data.action ?? "");
 
 	switch (action) {
 		case "travel": {
-			const targetId = String(data.target_poi ?? "unknown");
+			const targetId = String(
+				data.target_poi ?? context?.travelTarget ?? "unknown",
+			);
 			const msg = applyColor(`Traveling to ${targetId}`, COLORS.MSG_SUCCESS);
 			return formatWithTimestamp(msg, "game");
 		}
@@ -134,7 +144,9 @@ export function formatOk(data: Record<string, unknown>): FormattedMessage {
 		}
 
 		case "jump": {
-			const targetSystem = String(data.target_system ?? "unknown");
+			const targetSystem = String(
+				data.target_system ?? context?.jumpTarget ?? "unknown",
+			);
 			const msg = applyColor(
 				`Jumping to ${targetSystem} system`,
 				COLORS.MSG_SUCCESS,
