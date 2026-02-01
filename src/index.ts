@@ -32,7 +32,12 @@ import {
 	formatWelcome,
 	type OkContext,
 } from "./tui/formatters";
-import type { AlignmentType, Credentials, PersonalityType } from "./types";
+import type {
+	AlignmentType,
+	Credentials,
+	PersonalityType,
+	RegistrationOverrides,
+} from "./types";
 import { detectRepetition, isNearbyTarget, sleep } from "./utils";
 
 const memory = new MemoryStore(config.memoryPath);
@@ -57,6 +62,11 @@ const client = new SpaceMoltClient({
 });
 
 const gameState = new GameState();
+const registrationOverrides: RegistrationOverrides = {
+	empire: config.empire ?? undefined,
+	alignment: config.alignment ?? undefined,
+	personality: config.personality ?? undefined,
+};
 let actionLoopRunning = false;
 const REPETITION_THRESHOLD = 3;
 let maxTicksStart: number | null = null;
@@ -347,6 +357,7 @@ client.on<WelcomePayload>("welcome", async (data) => {
 			ollama,
 			client,
 			gameState.failedRegistrationNames,
+			registrationOverrides,
 		);
 	}
 });
@@ -462,6 +473,7 @@ client.on<ErrorPayload>("error", (data) => {
 				ollama,
 				client,
 				gameState.failedRegistrationNames,
+				registrationOverrides,
 			).then((choice) => {
 				gameState.pendingRegistration = choice;
 			});
@@ -472,12 +484,17 @@ client.on<ErrorPayload>("error", (data) => {
 				),
 			);
 			const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
+			const fallbackEmpire = registrationOverrides.empire ?? "solarian";
+			const fallbackAlignment = registrationOverrides.alignment ?? "neutral";
+			const fallbackPersonality =
+				registrationOverrides.personality ?? "pragmatist";
 			gameState.pendingRegistration = {
 				username: fallback,
-				empire: "solarian",
-				personality: "pragmatist",
+				empire: fallbackEmpire,
+				alignment: fallbackAlignment,
+				personality: fallbackPersonality,
 			};
-			client.register(fallback, "solarian");
+			client.register(fallback, fallbackEmpire);
 		}
 	}
 });

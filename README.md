@@ -35,3 +35,17 @@ Now that we have a playable account.
 A simple TUI with a status bar at the bottom with character information
 A scrolling log of the LLM's actions and results.
 Clean, readable and resizeable with simple colors.
+
+## Swarm orchestrator
+
+Run a swarm of non-interactive bots (default count 5) with a fast model and no thinking:
+
+```
+bun run swarm --count 5 --empire crimson --alignment evil --personality warrior
+```
+
+Notes:
+
+- Uses `OLLAMA_THINKING=false` and `OLLAMA_MODEL=ministral-3:8b` for each bot.
+- Writes orchestration info to `swarm.log` only.
+- Each bot still writes its own logs: `ui-<name>.log` and `debug-<name>.log`.

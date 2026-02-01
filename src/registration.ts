@@ -5,7 +5,11 @@ import type { OllamaAgent } from "./ollama";
 import type { OutputInterface } from "./output-interface";
 import { buildRegistrationPrompt } from "./prompt";
 import { formatAiThinking, formatSystemMessage } from "./tui/formatters";
-import type { AlignmentType, RegistrationChoice } from "./types";
+import type {
+	AlignmentType,
+	RegistrationChoice,
+	RegistrationOverrides,
+} from "./types";
 import { isValidAlignment, isValidEmpire, isValidPersonality } from "./utils";
 
 export async function runRegistrationFlow(
@@ -13,6 +17,7 @@ export async function runRegistrationFlow(
 	ollama: OllamaAgent,
 	client: SpaceMoltClient,
 	failedRegistrationNames: string[],
+	overrides: RegistrationOverrides = {},
 ): Promise<RegistrationChoice> {
 	output.log(
 		formatSystemMessage(
@@ -43,35 +48,40 @@ export async function runRegistrationFlow(
 			const personalityReason = result.json.personality_reason
 				? String(result.json.personality_reason).trim()
 				: undefined;
+			const resolvedEmpire = overrides.empire ?? empire;
+			const resolvedAlignment = overrides.alignment ?? alignment;
+			const resolvedPersonality = overrides.personality ?? personality;
 
 			if (
 				!username ||
-				!isValidEmpire(empire) ||
-				!isValidAlignment(alignment) ||
-				!isValidPersonality(personality)
+				!isValidEmpire(resolvedEmpire) ||
+				!isValidAlignment(resolvedAlignment) ||
+				!isValidPersonality(resolvedPersonality)
 			) {
 				throw new Error("Invalid registration response");
 			}
 
 			const choice: RegistrationChoice = {
 				username,
-				empire,
-				alignment,
-				personality,
+				empire: resolvedEmpire,
+				alignment: resolvedAlignment,
+				personality: resolvedPersonality,
 				personality_reason: personalityReason,
 			};
 
-			const alignmentInfo = ALIGNMENT_DESCRIPTIONS[alignment];
-			const personalityInfo = PERSONALITY_ARCHETYPES[personality];
+			const alignmentInfo = ALIGNMENT_DESCRIPTIONS[resolvedAlignment];
+			const personalityInfo = PERSONALITY_ARCHETYPES[resolvedPersonality];
 			output.log(
-				formatSystemMessage(`Registering new account: ${username} (${empire})`),
+				formatSystemMessage(
+					`Registering new account: ${username} (${resolvedEmpire})`,
+				),
 			);
 			output.log(
 				formatSystemMessage(
 					`Chosen alignment: ${alignmentInfo.name}, personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
 				),
 			);
-			client.register(username, empire);
+			client.register(username, resolvedEmpire);
 			return choice;
 		} catch (error) {
 			output.log(
@@ -83,17 +93,20 @@ export async function runRegistrationFlow(
 	}
 
 	const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
+	const fallbackEmpire = overrides.empire ?? "solarian";
+	const fallbackAlignment = overrides.alignment ?? "neutral";
+	const fallbackPersonality = overrides.personality ?? "pragmatist";
 	const fallbackChoice: RegistrationChoice = {
 		username: fallback,
-		empire: "solarian",
-		alignment: "neutral",
-		personality: "pragmatist",
+		empire: fallbackEmpire,
+		alignment: fallbackAlignment,
+		personality: fallbackPersonality,
 	};
 	output.log(
 		formatSystemMessage(
-			`Falling back to account: ${fallback} (solarian, neutral, pragmatist)`,
+			`Falling back to account: ${fallback} (${fallbackEmpire}, ${fallbackAlignment}, ${fallbackPersonality})`,
 		),
 	);
-	client.register(fallback, "solarian");
+	client.register(fallback, fallbackEmpire);
 	return fallbackChoice;
 }

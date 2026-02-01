@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"ollama-play": "bun src/index.ts",
+		"swarm": "bun src/swarm.ts",
 		"biome:format": "biome format .",
 		"biome:lint": "biome lint ."
 	},

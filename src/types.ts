@@ -31,6 +31,12 @@ export interface RegistrationChoice {
 	token?: string;
 }
 
+export interface RegistrationOverrides {
+	empire?: EmpireID;
+	alignment?: AlignmentType;
+	personality?: PersonalityType;
+}
+
 export interface PersonalityArchetype {
 	name: string;
 	emoji: string;

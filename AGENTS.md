@@ -27,6 +27,11 @@ Purpose: help coding agents work safely and consistently in this repo.
 - The `--name` argument is required and determines file paths:
   - Memory DB (includes credentials): `memory-{name}.sqlite`
 - Example: `bun run ollama-play --name alice` uses `memory-alice.sqlite`
+- Optional character overrides (new registrations only):
+  - `--empire <empire>` or `-e` - Force empire: solarian, voidborn, crimson, nebula, outerrim
+  - `--alignment <alignment>` or `-a` - Force alignment: lawful, good, neutral, chaotic, evil
+  - `--personality <personality>` or `-p` - Force personality: cartographer, merchant, warrior, diplomat, pragmatist
+- Example: `bun run ollama-play -n test-bot -e crimson -a evil -p warrior`
 
 ### Run in non-interactive mode (for testing/debugging)
 - `bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]`
@@ -47,9 +52,7 @@ Purpose: help coding agents work safely and consistently in this repo.
 - Credentials are stored in the instance SQLite DB and should not be committed.
 
 **Known test instances:**
-- `debug-bot` -> `memory-debug-bot.sqlite`
-- `test-bot-1` -> `memory-test-bot-1.sqlite`
-- `test-bot-2` -> `memory-test-bot-2.sqlite`
+- `test-cli-override` -> `memory-test-cli-override.sqlite`
 
 **Troubleshooting:**
 - If you see `Invalid username or token`, delete the instance DB (`memory-{name}.sqlite`), then rerun to create a new account.
