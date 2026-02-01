@@ -31,6 +31,7 @@ import {
 	formatChatMessage,
 	formatError,
 	formatLoggedIn,
+	formatMiningYield,
 	formatMotd,
 	formatOk,
 	formatScanResult,
@@ -130,12 +131,26 @@ function updateOutput(): void {
 function captureActionResult(resultType: string, payload: unknown): void {
 	if (gameState.pendingActionId === null) return;
 	memory.appendActionResult(gameState.pendingActionId, resultType, payload);
-	if (resultType === "ok" || resultType === "error") {
+
+	// Clear pending action for errors and mining_yield (which comes after ok)
+	if (resultType === "error" || resultType === "mining_yield") {
 		if (gameState.pendingActionTimeout) {
 			clearTimeout(gameState.pendingActionTimeout);
 			gameState.pendingActionTimeout = null;
 		}
 	}
+	// For "ok", only clear if it's NOT a mine action (mine waits for mining_yield)
+	else if (resultType === "ok") {
+		const okPayload = payload as Record<string, unknown>;
+		const okAction = String(okPayload?.action ?? "");
+		if (okAction !== "mine") {
+			if (gameState.pendingActionTimeout) {
+				clearTimeout(gameState.pendingActionTimeout);
+				gameState.pendingActionTimeout = null;
+			}
+		}
+	}
+
 	output.logDebug(
 		"ACTION_RESULT_CAPTURED",
 		`${resultType} linked to action ${gameState.pendingActionId}`,
@@ -689,6 +704,12 @@ client.on<ScanResultPayload>("scan_result", (data) => {
 	captureActionResult("scan_result", data);
 	output.log(formatScanResult(data));
 	memory.appendEvent("scan_result", data);
+});
+
+client.on("mining_yield", (data: Record<string, unknown>) => {
+	captureActionResult("mining_yield", data);
+	output.log(formatMiningYield(data));
+	memory.appendEvent("mining_yield", data);
 });
 
 client.on("ok", (data: Record<string, unknown>) => {

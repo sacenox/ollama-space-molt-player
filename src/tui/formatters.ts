@@ -121,6 +121,16 @@ export function formatScanResult(data: ScanResultPayload): FormattedMessage {
 	return formatWithTimestamp(msg, "game");
 }
 
+// Mining yield results
+export function formatMiningYield(
+	data: Record<string, unknown>,
+): FormattedMessage {
+	const resource = String(data.resource_id ?? "ore");
+	const quantity = Number(data.quantity ?? 0);
+	const msg = applyColor(`Mined ${quantity}x ${resource}`, COLORS.MSG_SUCCESS);
+	return formatWithTimestamp(msg, "game");
+}
+
 // OK messages - format based on action type
 export function formatOk(
 	data: Record<string, unknown>,
@@ -175,12 +185,7 @@ export function formatOk(
 		}
 
 		case "mine": {
-			const resource = String(data.resource ?? "ore");
-			const quantity = Number(data.quantity ?? 0);
-			const msg = applyColor(
-				`Mined ${quantity > 0 ? `${quantity}x ` : ""}${resource}`,
-				COLORS.MSG_SUCCESS,
-			);
+			const msg = applyColor("Mining...", COLORS.MSG_INFO);
 			return formatWithTimestamp(msg, "game");
 		}
 
