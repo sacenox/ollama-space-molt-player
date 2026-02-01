@@ -1,4 +1,5 @@
 import { SpaceMoltClient } from "../client/src/client";
+import type { ClientState } from "../client/src/client";
 import type {
   WelcomePayload,
   RegisteredPayload,
@@ -8,6 +9,7 @@ import type {
   ChatMessage,
   ScanResultPayload,
   EmpireID,
+  CargoItem,
 } from "../client/src/types";
 import { config } from "./config";
 import { MemoryStore } from "./memory";
@@ -21,11 +23,11 @@ type RegistrationChoice = { username: string; empire: EmpireID };
 
 const memory = new MemoryStore(config.memoryPath);
 const ollama = new OllamaAgent(config.ollamaUrl, config.ollamaModel, config.ollamaTimeoutMs);
-const tui = new Tui();
+const tui = new Tui(config.debug);
 
 const client = new SpaceMoltClient({
   url: config.spacemoltUrl,
-  debug: config.debug,
+  debug: false, //config.debug,
   reconnect: true,
 });
 
@@ -36,6 +38,7 @@ let actionLoopRunning = false;
 let worldSnapshot: WorldSnapshot = {};
 let registrationRetries = 0;
 let travelInProgress = false;
+let lastTravelTarget: string | null = null;
 const MAX_REGISTRATION_RETRIES = 3;
 const failedRegistrationNames: string[] = [];
 
@@ -64,27 +67,13 @@ function updateStatus(): void {
   const state = client.state;
   if (!state.player || !state.ship) {
     tui.setStatus("Not logged in");
+    tui.setSidebar("Not logged in.");
     return;
   }
-  const location = `${state.system?.name ?? state.player.current_system} - ${
-    state.poi?.name ?? state.player.current_poi
-  }`;
-  const status = [
-    `Player ${state.player.username} [${state.player.empire}]`,
-    `Cr ${state.player.credits}`,
-    `Hull ${state.ship.hull}/${state.ship.max_hull}`,
-    `Shield ${state.ship.shield}/${state.ship.max_shield}`,
-    `Fuel ${state.ship.fuel}/${state.ship.max_fuel}`,
-    `Traveling ${travelInProgress ? "Y" : "N"}`,
-    `Docked ${state.player.docked_at_base ? "Y" : "N"}`,
-    `Tick ${state.currentTick}`,
-    location,
-  ].join(" | ");
-  const cargoList = state.ship.cargo?.length
-    ? state.ship.cargo.map((item) => `${item.item_id}(${item.quantity})`).join(",")
-    : "none";
-  const statusWithCargo = `${status} | Cargo ${state.ship.cargo_used}/${state.ship.cargo_capacity} [${cargoList}]`;
-  tui.setStatus(statusWithCargo);
+  const statusText = buildStatusText(state, worldSnapshot, travelInProgress, lastTravelTarget);
+  const sidebarText = formatSidebar(state, worldSnapshot, travelInProgress, lastTravelTarget);
+  tui.setStatus(statusText);
+  tui.setSidebar(sidebarText);
 }
 
 function saveSnapshot(): void {
@@ -106,6 +95,7 @@ async function runRegistrationFlow(): Promise<void> {
     attempts += 1;
     try {
       const prompt = buildRegistrationPrompt(true, failedRegistrationNames);
+      tui.setPrompt(prompt);
       const result = await ollama.generateJson<RegistrationChoice>(prompt);
       const username = String(result.json.username ?? "").trim();
       const empire = String(result.json.empire ?? "").trim() as EmpireID;
@@ -141,15 +131,15 @@ async function startActionLoop(): Promise<void> {
         await sleep(config.tickDelayMs);
         continue;
       }
-      const recentActions = memory.getRecentActions(config.maxContextActions);
-      const recentEvents = memory.getRecentEvents(config.maxContextEvents);
+      const recentHistory = memory.getRecentHistory(config.maxContextActions, config.maxContextEvents);
       const prompt = buildActionPrompt({
         state: client.state,
         worldSnapshot,
-        recentActions,
-        recentEvents,
+        recentHistory,
         includeHelp: includeHelpInPrompt,
       });
+
+      tui.setPrompt(prompt);
 
       const promptExcerpt = prompt.slice(0, 1000);
       const result = await ollama.generateJson(prompt);
@@ -178,21 +168,24 @@ async function startActionLoop(): Promise<void> {
         continue;
       }
 
-      memory.appendAction(
-        validation.action.action,
-        validation.action.args ?? {},
-        promptExcerpt,
-        result.raw
-      );
-      includeHelpInPrompt = false;
+      const actionName = validation.action.action;
+      memory.appendAction(actionName, validation.action.args ?? {}, promptExcerpt, result.raw);
+      includeHelpInPrompt = actionName === "help";
 
-      const actionLog = dispatchAction(client, validation.action);
-      log(`Action: ${actionLog}`);
-      memory.appendEvent("action_sent", { action: validation.action });
+      if (actionName === "help") {
+        log("Action: help (showing help menu)");
+      } else {
+        if (actionName === "travel") {
+          lastTravelTarget = String(validation.action.args?.target_poi ?? "").trim() || null;
+        }
+        const actionLog = dispatchAction(client, validation.action);
+        log(`Action: ${actionLog}`);
+        memory.appendEvent("action_sent", { action: validation.action });
 
-      if (validation.action.action === "travel") {
-        client.getSystem();
-        client.getPOI();
+        if (actionName === "travel") {
+          client.getSystem();
+          client.getPOI();
+        }
       }
     } catch (error) {
       const message = (error as Error).message;
@@ -373,6 +366,7 @@ client.on("ok", (data: Record<string, unknown>) => {
   }
   if (action === "arrived") {
     travelInProgress = false;
+    lastTravelTarget = null;
     client.getSystem();
     client.getPOI();
   }
@@ -400,4 +394,187 @@ function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
   if (data.base && typeof data.base === "object") {
     worldSnapshot.base = data.base as WorldSnapshot["base"];
   }
+}
+
+const SIDEBAR_WIDTH = 30;
+const SIDEBAR_CONTENT_WIDTH = SIDEBAR_WIDTH - 2;
+
+function buildStatusText(
+  state: ClientState,
+  snapshot: WorldSnapshot,
+  traveling: boolean,
+  travelTargetId: string | null
+): string {
+  if (!state.player || !state.ship) return "Not logged in";
+  if (traveling) {
+    const destination = resolvePoiName(travelTargetId, snapshot, state);
+    return `Traveling to ${destination}`;
+  }
+  if (state.player.docked_at_base) return "Docked";
+  const currentPoi = resolvePoiName(state.player.current_poi, snapshot, state);
+  return `At ${currentPoi}`;
+}
+
+function formatSidebar(
+  state: ClientState,
+  snapshot: WorldSnapshot,
+  traveling: boolean,
+  travelTargetId: string | null
+): string {
+  if (!state.player || !state.ship) return "Not logged in.";
+
+  const width = SIDEBAR_CONTENT_WIDTH;
+  const lines: string[] = [];
+  const pushSection = (title: string, sectionLines: string[]): void => {
+    if (lines.length) lines.push("");
+    const titleText = truncate(`== ${title} ==`, width);
+    lines.push(`{cyan-fg}${titleText}{/cyan-fg}`);
+    for (const line of sectionLines) {
+      const truncated = truncate(line, width);
+      const colored = colorizeLabel(truncated);
+      lines.push(styleLine(colored));
+    }
+  };
+
+  const system = snapshot.system ?? state.system;
+  const poi = snapshot.poi ?? state.poi;
+  const base = snapshot.base ?? state.base;
+  const pois = snapshot.pois ?? [];
+
+  pushSection("Player", [
+    formatLine("Name", state.player.username, width),
+    formatLine("Empire", state.player.empire, width),
+    formatLine("Credits", String(state.player.credits), width),
+    formatLine("Docked", state.player.docked_at_base ? "Y" : "N", width),
+    formatLine("Tick", String(state.currentTick), width),
+  ]);
+
+  pushSection("Ship", [
+    formatLine("Hull", `${state.ship.hull}/${state.ship.max_hull}`, width),
+    formatLine("Shield", `${state.ship.shield}/${state.ship.max_shield}`, width),
+    formatLine("Fuel", `${state.ship.fuel}/${state.ship.max_fuel}`, width),
+    formatLine("Cargo", `${state.ship.cargo_used}/${state.ship.cargo_capacity}`, width),
+  ]);
+
+  const locationLines = [
+    formatLine("System", system?.name ?? state.player.current_system ?? "-", width),
+    formatLine("POI", poi?.name ?? state.player.current_poi ?? "-", width),
+    formatLine("Travel", traveling ? "Y" : "N", width),
+  ];
+  if (traveling) {
+    locationLines.push(formatLine("Dest", resolvePoiName(travelTargetId, snapshot, state), width));
+  }
+  pushSection("Location", locationLines);
+
+  const poiLines = formatPoiLines(pois, system?.pois, width);
+  pushSection("POIs", poiLines);
+
+  const cargoLines = formatCargoLines(state.ship.cargo ?? [], width);
+  pushSection("Cargo", cargoLines);
+
+  const baseLines = formatBaseLines(base, width);
+  pushSection("Base", baseLines);
+
+  const nearbyLines = formatNearbyLines(state.nearby ?? [], width);
+  pushSection("Nearby", nearbyLines);
+
+  return lines.join("\n");
+}
+
+function formatLine(label: string, value: string, width: number): string {
+  return `${label}: ${value}`;
+}
+
+function truncate(value: string, width: number): string {
+  if (value.length <= width) return value;
+  if (width <= 3) return value.slice(0, width);
+  return `${value.slice(0, width - 3)}...`;
+}
+
+function colorizeLabel(line: string): string {
+  const index = line.indexOf(":");
+  if (index <= 0) return line;
+  const label = line.slice(0, index);
+  const rest = line.slice(index);
+  return `{yellow-fg}${label}{/yellow-fg}${rest}`;
+}
+
+function styleLine(line: string): string {
+  if (line.includes("{")) return line;
+  if (line === "none" || line === "-") return `{gray-fg}${line}{/gray-fg}`;
+  return line;
+}
+
+function resolvePoiName(
+  poiId: string | null | undefined,
+  snapshot: WorldSnapshot,
+  state: ClientState
+): string {
+  if (!poiId) return "Unknown";
+  const snapshotPoi = snapshot.pois?.find((entry) => entry.id === poiId);
+  if (snapshotPoi?.name) return snapshotPoi.name;
+  if (snapshot.poi?.id === poiId && snapshot.poi.name) return snapshot.poi.name;
+  if (state.poi?.id === poiId && state.poi.name) return state.poi.name;
+  return poiId;
+}
+
+function formatPoiLines(
+  pois: WorldSnapshot["pois"],
+  systemPois: string[] | undefined,
+  width: number
+): string[] {
+  if (pois && pois.length > 0) {
+    const maxItems = 5;
+    const lines = pois.slice(0, maxItems).map((poi) => truncate(poi.name || poi.id, width));
+    if (pois.length > maxItems) {
+      lines.push(truncate(`+${pois.length - maxItems} more`, width));
+    }
+    return lines;
+  }
+  if (systemPois && systemPois.length > 0) {
+    const maxItems = 5;
+    const lines = systemPois.slice(0, maxItems).map((poiId) => truncate(poiId, width));
+    if (systemPois.length > maxItems) {
+      lines.push(truncate(`+${systemPois.length - maxItems} more`, width));
+    }
+    return lines;
+  }
+  return ["none"];
+}
+
+function formatCargoLines(cargo: CargoItem[] | undefined, width: number): string[] {
+  if (!cargo || cargo.length === 0) return ["none"];
+  const maxItems = 6;
+  const lines = cargo.slice(0, maxItems).map((item) =>
+    truncate(`${item.item_id} x${item.quantity}`, width)
+  );
+  if (cargo.length > maxItems) {
+    lines.push(truncate(`+${cargo.length - maxItems} more`, width));
+  }
+  return lines;
+}
+
+function formatBaseLines(base: WorldSnapshot["base"], width: number): string[] {
+  if (!base) return ["none"];
+  const services = Object.keys(base.services)
+    .filter((key) => (base.services as Record<string, boolean>)[key])
+    .join(", ");
+  return [
+    formatLine("Name", base.name || base.id, width),
+    formatLine("Services", services || "none", width),
+  ];
+}
+
+function formatNearbyLines(nearby: ClientState["nearby"], width: number): string[] {
+  if (!nearby || nearby.length === 0) return ["none"];
+  const maxItems = 6;
+  const lines = [formatLine("Count", String(nearby.length), width)];
+  for (const entry of nearby.slice(0, maxItems)) {
+    const name = entry.username ?? entry.player_id ?? "unknown";
+    lines.push(truncate(name, width));
+  }
+  if (nearby.length > maxItems) {
+    lines.push(truncate(`+${nearby.length - maxItems} more`, width));
+  }
+  return lines;
 }

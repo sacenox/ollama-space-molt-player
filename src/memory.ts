@@ -26,6 +26,20 @@ export interface StoredEvent {
   payload: string | null;
 }
 
+export type HistoryEntry =
+  | {
+      kind: "action";
+      ts: string;
+      action: string;
+      args: string | null;
+    }
+  | {
+      kind: "event";
+      ts: string;
+      type: string;
+      payload: string | null;
+    };
+
 const MAX_TEXT = 2000;
 
 export class MemoryStore {
@@ -112,6 +126,30 @@ export class MemoryStore {
       .all(limit) as StoredEvent[];
     return rows.reverse();
   }
+
+  getRecentHistory(actionLimit: number, eventLimit: number): HistoryEntry[] {
+    const actions = this.getRecentActions(actionLimit).map((row) => ({
+      kind: "action" as const,
+      ts: row.ts,
+      action: row.action,
+      args: row.args,
+    }));
+    const events = this.getRecentEvents(eventLimit).map((row) => ({
+      kind: "event" as const,
+      ts: row.ts,
+      type: row.type,
+      payload: row.payload,
+    }));
+    const combined = [...actions, ...events];
+    combined.sort((a, b) => {
+      const timeA = tsValue(a.ts);
+      const timeB = tsValue(b.ts);
+      if (timeA !== timeB) return timeA - timeB;
+      if (a.kind === b.kind) return 0;
+      return a.kind === "action" ? -1 : 1;
+    });
+    return combined;
+  }
 }
 
 function nowIso(): string {
@@ -130,4 +168,9 @@ function truncate(text: string | null | undefined): string | null {
   if (!text) return null;
   if (text.length <= MAX_TEXT) return text;
   return text.slice(0, MAX_TEXT);
+}
+
+function tsValue(ts: string): number {
+  const value = Date.parse(ts);
+  return Number.isFinite(value) ? value : 0;
 }

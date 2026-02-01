@@ -1,12 +1,11 @@
 import type { ClientState } from "../client/src/client";
 import type { Base, POI, System } from "../client/src/types";
-import type { StoredAction, StoredEvent } from "./memory";
+import type { HistoryEntry } from "./memory";
 
 export interface PromptContext {
   state: ClientState;
   worldSnapshot?: WorldSnapshot;
-  recentActions: StoredAction[];
-  recentEvents: StoredEvent[];
+  recentHistory: HistoryEntry[];
   includeHelp: boolean;
 }
 
@@ -64,13 +63,12 @@ Forum:
 
 Other:
   help                          - Show this help
-  quit                          - Exit client (or press Ctrl+D)
 `;
 
 export function buildActionPrompt(context: PromptContext): string {
   const stateText = formatState(context.state);
   const worldText = formatWorldSnapshot(context.state, context.worldSnapshot);
-  const memoryText = formatMemory(context.recentActions, context.recentEvents);
+  const memoryText = formatGroupedMemory(context.recentHistory);
   const helpBlock = context.includeHelp ? `\nHELP MENU:\n${HELP_TEXT}` : "";
 
   return `You are an autonomous player for the SpaceMolt MMO (https://www.spacemolt.com/).
@@ -88,7 +86,7 @@ RECENT MEMORY:
 ${memoryText}
 
 ACTION SCHEMA (JSON ONLY):
-{"action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|status|system|poi|base|skills|recipes|version|nearby|cargo|wait","args":{...}}
+{"action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|status|system|poi|base|skills|recipes|version|nearby|cargo|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -102,13 +100,13 @@ REQUIRED ARGS:
 
 NOTES:
 - Use only the listed actions.
-- If an action requires args and you do not know valid values, use {"action":"wait"}.
+- If an action requires args and you do not know valid values, use {"action":"help"}.
 - Never omit required args or leave them blank.
 - IDs must come from the current state or world snapshot.
-- If unsure, use {"action":"wait"}.
+- If unsure, use {"action":"help"}.
 
 EXAMPLES (valid JSON only):
-{"action":"wait"}
+{"action":"help"}
 {"action":"mine"}
 {"action":"travel","args":{"target_poi":"poi_id_here"}}
 {"action":"sell","args":{"item_id":"ore_iron","quantity":10}}
@@ -260,26 +258,167 @@ function formatWorldSnapshot(state: ClientState, snapshot?: WorldSnapshot): stri
   return lines.join("\n");
 }
 
-function formatMemory(actions: StoredAction[], events: StoredEvent[]): string {
-  const lines: string[] = [];
+function formatGroupedMemory(history: HistoryEntry[]): string {
+  if (history.length === 0) return "(no recent memory)";
 
-  if (actions.length === 0 && events.length === 0) {
-    return "(no recent memory)";
-  }
+  const systemEvents: Extract<HistoryEntry, { kind: "event" }>[] = [];
+  const blocks: {
+    action: Extract<HistoryEntry, { kind: "action" }>;
+    events: Extract<HistoryEntry, { kind: "event" }>[];
+  }[] = [];
+  let currentBlock: (typeof blocks)[number] | null = null;
 
-  if (actions.length > 0) {
-    lines.push("Actions:");
-    for (const action of actions) {
-      lines.push(`- ${action.ts} ${action.action} ${action.args ?? ""}`.trim());
+  for (const entry of history) {
+    if (entry.kind === "action") {
+      currentBlock = { action: entry, events: [] };
+      blocks.push(currentBlock);
+      continue;
+    }
+
+    if (entry.type === "action_sent") {
+      continue;
+    }
+
+    if (currentBlock) {
+      currentBlock.events.push(entry);
+    } else {
+      systemEvents.push(entry);
     }
   }
 
-  if (events.length > 0) {
-    lines.push("Events:");
-    for (const event of events) {
-      lines.push(`- ${event.ts} ${event.type} ${event.payload ?? ""}`.trim());
+  const lines: string[] = [];
+  if (systemEvents.length > 0) {
+    lines.push("System events:");
+    for (const event of systemEvents) {
+      lines.push(formatEventLine(event));
+    }
+  }
+
+  for (const block of blocks) {
+    const argsText = formatActionArgs(block.action.args);
+    lines.push(`Action: ${block.action.ts} ${block.action.action}${argsText}`.trim());
+    if (block.events.length === 0) {
+      lines.push("- Event: none");
+    } else {
+      for (const event of block.events) {
+        lines.push(formatEventLine(event));
+      }
     }
   }
 
   return lines.join("\n");
+}
+
+function formatEventLine(event: Extract<HistoryEntry, { kind: "event" }>): string {
+  const summary = summarizeEvent(event);
+  if (summary) {
+    return `- Event: ${event.ts} ${event.type} ${summary}`.trim();
+  }
+  return `- Event: ${event.ts} ${event.type}`.trim();
+}
+
+function formatActionArgs(argsRaw: string | null): string {
+  if (!argsRaw) return "";
+  const parsed = parseJson(argsRaw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return "";
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length === 0) return "";
+  const formatted = entries
+    .map(([key, value]) => `${key}=${formatValue(value)}`)
+    .filter((text) => text.length > 1)
+    .join(" ");
+  if (!formatted) return "";
+  return ` ${truncateText(formatted, 120)}`;
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string") return truncateText(value, 40);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return "[list]";
+  if (typeof value === "object") return "[object]";
+  return String(value);
+}
+
+const SUPPRESSED_EVENT_PAYLOADS = new Set([
+  "state_update",
+  "ok",
+  "logged_in",
+  "registered",
+  "version_info",
+]);
+
+function summarizeEvent(event: Extract<HistoryEntry, { kind: "event" }>): string | null {
+  if (SUPPRESSED_EVENT_PAYLOADS.has(event.type)) return null;
+  if (!event.payload) return null;
+  const payload = parseJson(event.payload);
+  if (!payload || typeof payload !== "object") return null;
+
+  switch (event.type) {
+    case "chat_message": {
+      const sender = getStringField(payload, "sender") ?? getStringField(payload, "sender_id");
+      const channel = getStringField(payload, "channel");
+      const content = getStringField(payload, "content");
+      const parts = [
+        sender ? `from=${sender}` : null,
+        channel ? `channel=${channel}` : null,
+        content ? `msg="${truncateText(content, 60)}"` : null,
+      ].filter(Boolean);
+      return parts.length ? parts.join(" ") : null;
+    }
+    case "scan_result": {
+      const target = getStringField(payload, "target_id");
+      const success = getStringField(payload, "success");
+      const info = Array.isArray((payload as Record<string, unknown>).revealed_info)
+        ? ((payload as Record<string, unknown>).revealed_info as unknown[]).map(String).join(",")
+        : null;
+      const parts = [
+        target ? `target=${target}` : null,
+        success ? `success=${success}` : null,
+        info ? `info=${truncateText(info, 80)}` : null,
+      ].filter(Boolean);
+      return parts.length ? parts.join(" ") : null;
+    }
+    case "error": {
+      const code = getStringField(payload, "code");
+      const message = getStringField(payload, "message");
+      const parts = [code ? `code=${code}` : null, message ? `message=${truncateText(message, 80)}` : null].filter(Boolean);
+      return parts.length ? parts.join(" ") : null;
+    }
+    case "llm_invalid_action": {
+      const error = getStringField(payload, "error");
+      return error ? `error=${truncateText(error, 80)}` : null;
+    }
+    case "loop_error":
+    case "llm_timeout": {
+      const message = getStringField(payload, "message");
+      return message ? `message=${truncateText(message, 80)}` : null;
+    }
+    default: {
+      const message = getStringField(payload, "message");
+      return message ? `message=${truncateText(message, 80)}` : null;
+    }
+  }
+}
+
+function getStringField(payload: object, key: string): string | null {
+  const value = (payload as Record<string, unknown>)[key];
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
+function parseJson(value: string): unknown | null {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  if (max <= 3) return value.slice(0, max);
+  return `${value.slice(0, max - 3)}...`;
 }

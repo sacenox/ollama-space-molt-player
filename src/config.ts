@@ -6,7 +6,7 @@ export const config = {
   memoryPath: process.env.MEMORY_DB ?? "memory.sqlite",
   credentialsFile: ".spacemolt-bot-credentials.json",
   tickDelayMs: 11000,
-  maxContextActions: 10,
-  maxContextEvents: 20,
+  maxContextActions: 5,
+  maxContextEvents: 5,
   ollamaTimeoutMs: 60000,
 };

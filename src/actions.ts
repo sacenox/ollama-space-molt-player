@@ -28,6 +28,7 @@ const ACTIONS: Record<string, string[]> = {
   version: [],
   nearby: [],
   cargo: [],
+  help: [],
   wait: [],
 };
 
@@ -147,6 +148,8 @@ export function dispatchAction(client: SpaceMoltClient, decision: ActionDecision
       return "nearby (from state)";
     case "cargo":
       return "cargo (from state)";
+    case "help":
+      return "help";
     case "wait":
       return "wait";
     default:
