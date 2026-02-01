@@ -1,94 +1,11 @@
 import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
+import { ACTION_DEFINITIONS, MAX_GOAL_LENGTH } from "./constants";
+import type { ActionDecision } from "./types";
+import { isValidEmpire, isValidPersonality } from "./utils";
 
-export interface ActionDecision {
-	action: string;
-	args?: Record<string, unknown>;
-	goal?: string;
-}
-
-export const MAX_GOAL_LENGTH = 120;
-
-export type PersonalityType =
-	| "wonderer"
-	| "merchant"
-	| "warrior"
-	| "diplomat"
-	| "pragmatist";
-
-export const PERSONALITY_ARCHETYPES: Record<
-	PersonalityType,
-	{ name: string; emoji: string; description: string }
-> = {
-	wonderer: {
-		name: "Wonderer",
-		emoji: "🔍",
-		description:
-			"Curious investigator who seeks new systems, shares discoveries, and frequently engages with forums to learn and contribute knowledge.",
-	},
-	merchant: {
-		name: "Merchant",
-		emoji: "💰",
-		description:
-			"Trade-focused opportunist who monitors markets, posts trade offers, and builds wealth through smart economic decisions.",
-	},
-	warrior: {
-		name: "Warrior",
-		emoji: "⚔️",
-		description:
-			"Combat-driven competitor who seeks battles, shares victory reports, and isn't afraid to taunt opponents or discuss conflicts.",
-	},
-	diplomat: {
-		name: "Diplomat",
-		emoji: "🤝",
-		description:
-			"Socially-focused alliance builder who greets others, coordinates via faction chat, and actively participates in community discussions.",
-	},
-	pragmatist: {
-		name: "Pragmatist",
-		emoji: "🎯",
-		description:
-			"Balanced efficiency expert who interacts when beneficial, focuses on measurable progress, and avoids unnecessary distractions.",
-	},
-};
-
-const ACTIONS: Record<string, string[]> = {
-	register: ["username", "empire"],
-	login: ["username", "token"],
-	logout: [],
-	travel: ["target_poi"],
-	jump: ["target_system"],
-	dock: [],
-	undock: [],
-	mine: [],
-	attack: ["target_id"],
-	scan: ["target_id"],
-	buy: ["listing_id", "quantity"],
-	sell: ["item_id", "quantity"],
-	refuel: [],
-	repair: [],
-	craft: ["recipe_id"],
-	chat: ["channel", "content"],
-	say: ["content"],
-	faction: ["content"],
-	msg: ["target_id", "content"],
-	status: [],
-	system: [],
-	poi: [],
-	base: [],
-	skills: [],
-	recipes: [],
-	version: [],
-	nearby: [],
-	cargo: [],
-	forum: [],
-	forum_thread: ["thread_id"],
-	forum_post: ["category", "title", "content"],
-	forum_reply: ["thread_id", "content"],
-	forum_upvote: [],
-	help: [],
-	wait: [],
-};
+export { MAX_GOAL_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
+export type { ActionDecision, PersonalityType } from "./types";
 
 export function validateAction(decision: unknown): {
 	ok: boolean;
@@ -110,7 +27,7 @@ export function validateAction(decision: unknown): {
 	const action = String(
 		(decision as ActionDecision).action ?? "",
 	).toLowerCase();
-	if (!action || !(action in ACTIONS)) {
+	if (!action || !(action in ACTION_DEFINITIONS)) {
 		return { ok: false, error: `Unknown action: ${action || "(empty)"}` };
 	}
 
@@ -122,13 +39,14 @@ export function validateAction(decision: unknown): {
 		return { ok: false, error: "Args must be an object" };
 	}
 
-	const required = ACTIONS[action];
+	const required = ACTION_DEFINITIONS[action];
 	for (const key of required) {
 		if (!(key in args)) {
 			return { ok: false, error: `Missing arg: ${key}` };
 		}
 	}
 
+	// Validation logic
 	if (action === "buy" || action === "sell") {
 		const quantity = Number(args.quantity);
 		if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -263,20 +181,6 @@ export function validateAction(decision: unknown): {
 	}
 
 	return { ok: true, action: { action, args, goal } };
-}
-
-function isValidEmpire(empire: string): empire is EmpireID {
-	return ["solarian", "voidborn", "crimson", "nebula", "outerrim"].includes(
-		empire,
-	);
-}
-
-function isValidPersonality(
-	personality: string,
-): personality is PersonalityType {
-	return ["wonderer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
-		personality,
-	);
 }
 
 export function dispatchAction(

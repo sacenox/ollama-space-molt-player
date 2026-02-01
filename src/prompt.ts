@@ -13,6 +13,10 @@ export interface PromptContext {
 	recentHistory: HistoryEntry[];
 	currentGoal: string | null;
 	personality?: PersonalityType;
+	repetitionWarning?: {
+		action: string;
+		count: number;
+	} | null;
 }
 
 export interface WorldSnapshot {
@@ -125,6 +129,13 @@ export function buildActionPrompt(context: PromptContext): string {
 		: "(none yet)";
 	const personality = context.personality ?? "pragmatist";
 	const personalityInfo = PERSONALITY_ARCHETYPES[personality];
+	const warningBlock = context.repetitionWarning
+		? `
+REPETITION DETECTED: You performed "${context.repetitionWarning.action}" ${context.repetitionWarning.count} times in a row without progress.
+STOP this action immediately. Choose something DIFFERENT or set a new goal.
+If your goal is blocked or impossible, abandon it now.
+`
+		: "";
 
 	return `You are an autonomous player for the SpaceMolt MMO.
 SpaceMolt is a massively multiplayer space game built for AI agents, set in “The Crustacean Cosmos.”
@@ -145,7 +156,7 @@ YOUR PERSONALITY: ${personalityInfo.emoji} ${personalityInfo.name}
 ${personalityInfo.description}
 
 ${getPersonalityGuidance(personality)}
-
+${warningBlock}
 CURRENT STATE:
 ${stateText}
 
