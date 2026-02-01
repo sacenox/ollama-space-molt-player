@@ -1,170 +1,208 @@
 # Agent Guide for ollama-spacemolt-player
 
-Purpose: help coding agents work safely and consistently in this repo.
+Help coding agents work safely and consistently in this repo.
+
+## Important References
+
+**Game Server WebSocket API**: https://www.spacemolt.com/api.md
+
+The `client/` folder in the root is a reference client that includes the library used to connect to the game server.
+
+When testing, **reuse existing accounts** when possible. Memory DB files (`memory-*.sqlite`) are in the root and git-ignored. Examples: `memory-test-cli-override.sqlite`, `memory-swarm-01.sqlite`.
 
 ## Repo Snapshot
-- Runtime: Bun (TypeScript, ESM).
-- UI: terminal UI via `blessed`.
-- LLM: local Ollama HTTP API.
-- Data: SQLite via `bun:sqlite` at `memory-{name}.sqlite`.
-- Game client: SpaceMolt reference client is a git submodule in `client/`.
+
+- **Runtime**: Bun (TypeScript, ESM)
+- **UI**: Terminal UI via `blessed`
+- **LLM**: Local Ollama HTTP API
+- **Data**: SQLite via `bun:sqlite` at `memory-{name}.sqlite`
+- **Game client**: SpaceMolt reference client (git submodule in `client/`)
 
 ## Key Paths
-- App entry: `src/index.ts` (orchestrates client + LLM + memory + TUI).
-- LLM client: `src/ollama.ts`.
-- Prompts: `src/prompt.ts`.
-- Memory store: `src/memory.ts`.
-- Actions validation: `src/actions.ts`.
-- TUI: `src/tui.ts`.
-- Config: `src/config.ts` (env-driven settings).
 
-## Commands (Build / Lint / Test)
+- `src/index.ts` - Main entry (orchestrates client + LLM + memory + output)
+- `src/config.ts` - Configuration and CLI args parsing
+- `src/ollama.ts` - Ollama HTTP client
+- `src/memory.ts` - SQLite memory store
+- `src/prompt.ts` - LLM prompt building
+- `src/actions.ts` - Action validation and dispatch
+- `src/game-state.ts` - Game state tracking
+- `src/registration.ts` - Registration flow
+- `src/output/tui-output.ts` - Interactive TUI output
+- `src/output/file-logger-output.ts` - Headless log output
+- `src/output-interface.ts` - Output interface definition
+- `src/swarm.ts` - Swarm orchestrator for multiple bots
+- `src/tui/` - TUI components (layout, formatters, colors, utils)
+- `src/types.ts` - Type definitions
+- `src/utils.ts` - Shared utilities
+- `src/constants.ts` - Constants
+
+## Commands
+
 ### Install
-- `bun install`
+```bash
+bun install
+```
 
-### Run app
-- `bun run ollama-play --name <instance-name>` (or `-n <instance-name>`)
-- The `--name` argument is required and determines file paths:
-  - Memory DB (includes credentials): `memory-{name}.sqlite`
-- Example: `bun run ollama-play --name alice` uses `memory-alice.sqlite`
-- Optional character overrides (new registrations only):
-  - `--empire <empire>` or `-e` - Force empire: solarian, voidborn, crimson, nebula, outerrim
-  - `--alignment <alignment>` or `-a` - Force alignment: lawful, good, neutral, chaotic, evil
-  - `--personality <personality>` or `-p` - Force personality: cartographer, merchant, warrior, diplomat, pragmatist
-- Example: `bun run ollama-play -n test-bot -e crimson -a evil -p warrior`
+### Run Single Bot (Interactive)
+```bash
+bun run ollama-play --name <instance-name>
+```
 
-### Run in non-interactive mode (for testing/debugging)
-- `bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]`
-- Runs without the blessed TUI; output is written to log files instead.
-- Example: `bun run ollama-play --name test-bot --non-interactive --max-ticks 100`
+Required:
+- `--name` or `-n`: Instance name (determines DB: `memory-{name}.sqlite`)
 
-**Log files created:**
-- `ui-{name}.log` - UI output with timestamps (game events, AI actions, state updates)
-- `debug-{name}.log` - Debug information (full LLM prompts, raw responses, thinking)
+Optional character overrides (new registrations only):
+- `--empire` or `-e`: solarian, voidborn, crimson, nebula, outerrim
+- `--alignment` or `-a`: lawful, good, neutral, chaotic, evil
+- `--personality` or `-p`: cartographer, merchant, warrior, diplomat, pragmatist
+- `--speech-style` or `-s`: mythic, punny, gritty, scholarly
 
-**Flags:**
-- `--non-interactive` - Enable headless mode (no TUI, output to log files)
-- `--max-ticks <number>` - Stop after N game ticks (optional; runs indefinitely if not set)
-- Logs are truncated on each run (fresh logs per execution)
+Examples:
+```bash
+bun run ollama-play -n alice
+bun run ollama-play -n test-bot -e crimson -a evil -p warrior
+```
 
-### Reusing test accounts
-- Prefer reusing the same instance names to avoid creating new accounts on every run.
-- Credentials are stored in the instance SQLite DB and should not be committed.
+### Run Non-Interactive (Headless)
+```bash
+bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]
+```
 
-**Known test instances:**
-- `test-cli-override` -> `memory-test-cli-override.sqlite`
+Output:
+- `ui-{name}.log` - UI output with timestamps
+- `debug-{name}.log` - Debug info (prompts, responses, thinking)
 
-**Troubleshooting:**
-- If you see `Invalid username or token`, delete the instance DB (`memory-{name}.sqlite`), then rerun to create a new account.
+Example:
+```bash
+bun run ollama-play --name test-bot --non-interactive --max-ticks 100
+```
 
-### Format
-- `bun run biome:format`
+### Run Swarm
+```bash
+bun run swarm [--count 5] [--prefix swarm] [--empire <empire>] [--alignment <alignment>] [--personality <personality>] [--speech-style <style>]
+```
 
-### Lint
-- `bun run biome:lint`
+Defaults:
+- Count: 5
+- Prefix: swarm (creates swarm-01, swarm-02, etc.)
+- Model: ministral-3:8b
+- Thinking: false
 
-### Build
-- No build script configured. If you add one, document it here.
+Example:
+```bash
+bun run swarm --count 10 --empire crimson --alignment evil --personality warrior
+```
 
-### Tests
-- Manual testing only (run the app and verify behavior).
-- No test runner configured; single-test command is not available yet.
-- If tests are added later, prefer a command that can target a file or test name.
+### Format and Lint
+```bash
+bun run biome:format
+bun run biome:lint
+```
 
-## Environment / Config
-- `OLLAMA_URL` (default: `http://localhost:11434`)
-- `OLLAMA_MODEL` (default: `qwen3:8b`)
-- `OLLAMA_TEMPERATURE` (number, default: `0.5`)
-- `OLLAMA_THINKING` (boolean, default: `true` - enables thinking mode for Qwen3)
-- `OLLAMA_TIMEOUT_MS` is not present; timeout is configured in `src/config.ts` as `ollamaTimeoutMs`.
-- `SPACEMOLT_URL` (default: `wss://game.spacemolt.com/ws`)
-- `DEBUG` (string, enable TUI prompt pane when `true`)
-- `MEMORY_DB` (default: `memory-{name}.sqlite`)
+### Testing
 
-## Cursor / Copilot Rules
-- No Cursor rules found in `.cursor/rules/` or `.cursorrules`.
-- No Copilot rules found in `.github/copilot-instructions.md`.
+Manual testing only. No test runner configured.
+
+Prefer reusing existing accounts:
+- `test-cli-override` → `memory-test-cli-override.sqlite`
+- `test-bot-1` → `memory-test-bot-1.sqlite`
+- `swarm-01` through `swarm-05` → `memory-swarm-*.sqlite`
+
+If you see `Invalid username or token`, delete the instance DB and rerun.
+
+## Environment Variables
+
+- `OLLAMA_URL` - Ollama server URL (default: `http://localhost:11434`)
+- `OLLAMA_MODEL` - Model name (default: `qwen3:8b`)
+- `OLLAMA_TEMPERATURE` - Temperature (default: `0.5`)
+- `OLLAMA_THINKING` - Enable thinking mode (default: `true`)
+- `SPACEMOLT_URL` - Game WebSocket URL (default: `wss://game.spacemolt.com/ws`)
+- `DEBUG` - Enable TUI prompt pane (default: `false`)
+- `MEMORY_DB` - Override DB path (default: `memory-{name}.sqlite`)
+
+Timeout is configured in `src/config.ts` as `ollamaTimeoutMs` (60000ms).
 
 ## Code Style Guidelines
 
-### Language and Modules
-- TypeScript, ESM (`"type": "module"` in `package.json`).
-- Prefer `import type` for type-only imports.
-- Use explicit exports and named exports when possible.
-
 ### Formatting
-- Use Biome for formatting and linting.
-- Keep formatting consistent with existing files (tabs for indent, semicolons, double quotes).
-- Avoid manual reformatting; let Biome handle it.
-
-### Imports
-- Order: external modules first, then local modules.
-- Keep import lists stable; do not reorder unless needed for clarity.
-- Prefer `import type` to avoid runtime type imports.
+- Use Biome for formatting and linting
+- Let Biome handle formatting; avoid manual changes
 
 ### Naming Conventions
-- Types/interfaces: `PascalCase`.
-- Classes: `PascalCase`.
-- Functions and variables: `camelCase`.
-- Constants: `SCREAMING_SNAKE_CASE` for global constants; `camelCase` for local consts.
-- File names: `lowercase` with `.ts`.
+- Types/interfaces: `PascalCase`
+- Classes: `PascalCase`
+- Functions and variables: `camelCase`
+- Global constants: `SCREAMING_SNAKE_CASE`
+- Local constants: `camelCase`
+- File names: `lowercase` with `.ts`
 
 ### Types and Strictness
-- `strict` TypeScript is enabled. Avoid `any`.
-- Use `unknown` then narrow or validate.
-- Prefer explicit return types for public functions.
-- Prefer `null` over `undefined` when a value is intentionally absent (matches current code style).
+- `strict` TypeScript enabled; avoid `any`
+- Use `unknown` then narrow or validate
+- Prefer explicit return types for public functions
+- Prefer `null` over `undefined` for intentionally absent values
 
 ### Error Handling
-- Use `try/catch` around external I/O (HTTP, file, DB).
-- Throw typed errors where appropriate (see `OllamaTimeoutError`).
-- Validate external inputs; return structured errors (see `validateAction`).
-- Log errors with context and keep user-facing messaging concise.
+- Use `try/catch` around external I/O (HTTP, file, DB)
+- Throw typed errors where appropriate (e.g., `OllamaTimeoutError`)
+- Validate external inputs; return structured errors (e.g., `validateAction`)
+- Log errors with context; keep user-facing messages concise
 
 ### Side Effects and State
-- Keep side effects in `src/index.ts`; helper modules should stay pure when possible.
-- Avoid hidden global state; prefer explicit parameters.
-- Use small, focused functions for validation and formatting.
+- Keep side effects in `src/index.ts`; helper modules should be pure
+- Avoid hidden global state; prefer explicit parameters
+- Use small, focused functions for validation and formatting
 
 ### Prompts and LLM Outputs
-- LLM calls must expect malformed output; parse defensively.
-- Enforce JSON-only responses and validate fields before use.
-- Keep prompt updates in `src/prompt.ts`.
+- LLM calls must expect malformed output; parse defensively
+- Enforce JSON-only responses and validate fields before use
+- Keep prompt updates in `src/prompt.ts`
 
 ### TUI
-- Use `blessed` widgets and keep rendering in `src/tui.ts`.
-- Avoid adding Unicode-heavy UI unless needed (TUI uses `fullUnicode: false`).
+- TUI is now in `src/output/tui-output.ts` and `src/tui/` directory
+- Use `blessed` widgets; keep rendering in output modules
+- Avoid Unicode-heavy UI unless needed (uses `fullUnicode: false`)
 
 ### SQLite / Memory
-- Centralize DB operations in `src/memory.ts`.
-- Serialize JSON using helper functions; guard against JSON stringify errors.
-- Keep text fields reasonably bounded (see `MAX_TEXT`).
+- Centralize DB operations in `src/memory.ts`
+- Serialize JSON using helper functions; guard against stringify errors
+- Keep text fields reasonably bounded
 
 ### Game Client
-- Use the reference client from `client/`.
-- Avoid changing `client/` unless the change is intended for the submodule.
+- Use the reference client from `client/` submodule
+- Do not modify `client/` unless the change is intended for upstream
 
 ## Editing Safety
-- Do not edit `memory.sqlite` or `memory-*.sqlite`.
-- Do not commit secrets or credentials.
-- Keep changes minimal and aligned with the current architecture.
+
+- Do not edit or commit `memory-*.sqlite` files
+- Do not commit secrets or credentials
+- Keep changes minimal and aligned with current architecture
+- All DB files and logs are git-ignored
 
 ## Conventions in This Repo
-- Use small, focused helpers for formatting and validation.
-- Prefer explicit `if` branches to implicit coercion.
-- Use early returns for invalid states.
-- Maintain descriptive log messages for TUI output.
+
+- Use small, focused helpers for formatting and validation
+- Prefer explicit `if` branches over implicit coercion
+- Use early returns for invalid states
+- Maintain descriptive log messages for output
 
 ## When Adding New Features
-- Update prompts and validation together.
-- Add to memory tracking only if it improves LLM context.
-- Keep tick timing aligned with server tick (10s; local uses 11s).
+
+- Update prompts and validation together
+- Add to memory tracking only if it improves LLM context
+- Keep tick timing aligned with server tick (10s; local uses 11s)
+- Update both `src/output/tui-output.ts` and `src/output/file-logger-output.ts` for UI changes
 
 ## If You Add Tests Later
-- Document the test framework and single-test command here.
-- Prefer a runner that supports file and name filtering.
+
+- Document the test framework and single-test command here
+- Prefer a runner that supports file and name filtering
 
 ## Quick Review Checklist
-- `bun run biome:lint`
-- `bun run biome:format`
-- Manual run: `bun run ollama-play`
+
+```bash
+bun run biome:lint
+bun run biome:format
+bun run ollama-play --name test-bot --non-interactive --max-ticks 10
+```

@@ -130,7 +130,12 @@ function updateOutput(): void {
 
 function captureActionResult(resultType: string, payload: unknown): void {
 	if (gameState.pendingActionId === null) return;
-	memory.appendActionResult(gameState.pendingActionId, resultType, payload);
+	memory.appendActionResult(
+		gameState.pendingActionId,
+		getCurrentTick(),
+		resultType,
+		payload,
+	);
 
 	// Clear pending action for errors and mining_yield (which comes after ok)
 	if (resultType === "error" || resultType === "mining_yield") {
@@ -172,10 +177,10 @@ function shouldStopForMaxTicks(allowFallbackCount: boolean): boolean {
 	return fallbackTickCount >= config.maxTicks;
 }
 
-function getActionStamp(): number {
+function getCurrentTick(): number {
 	const tick = client.state.currentTick;
 	if (typeof tick === "number" && Number.isFinite(tick)) return tick;
-	return Date.now();
+	return 0;
 }
 
 function getForumFollowUpStatus(): "unread" | "periodic" | null {
@@ -278,16 +283,17 @@ async function startActionLoop(): Promise<void> {
 				config.maxContextActions,
 				config.maxContextEvents,
 			);
+			const currentTick = getCurrentTick();
 			let memorySummary = "(summary unavailable)";
 			try {
-				const summaryPrompt = buildSummaryPrompt(recentHistory);
+				const summaryPrompt = buildSummaryPrompt(recentHistory, currentTick);
 				const summaryText = await ollama.generateText(summaryPrompt);
 				memorySummary = summaryText || "(summary unavailable)";
 			} catch (error) {
 				const message = (error as Error).message;
 				output.logDebug("SUMMARY_ERROR", message);
 			}
-			const lastActionResult = buildLastActionResult(memory);
+			const lastActionResult = buildLastActionResult(memory, currentTick);
 			const recentActions = memory.getRecentActions(REPETITION_THRESHOLD);
 			const repetitionWarning = detectRepetition(
 				recentActions,
@@ -320,6 +326,8 @@ async function startActionLoop(): Promise<void> {
 				memorySummary,
 				lastActionResult,
 				currentMission: gameState.currentMission,
+				currentTick,
+				memory,
 				empire: client.state.player?.empire,
 				alignment: gameState.credentials?.alignment,
 				personality: gameState.credentials?.personality,
@@ -338,14 +346,14 @@ async function startActionLoop(): Promise<void> {
 			const result = await ollama.generateJson(prompt);
 			output.logDebug("LLM_RESPONSE_RAW", result.raw);
 			if (result.thinking) {
-				output.log(formatAiThinking(result.thinking));
+				output.log(formatAiThinking(result.thinking, getCurrentTick()));
 				output.logDebug("LLM_THINKING", result.thinking);
 			}
 			const validation = validateAction(result.json);
 			if (!validation.ok || !validation.action) {
 				const message = `Invalid action from LLM: ${validation.error ?? "unknown"}`;
-				output.log(formatSystemMessage(message));
-				memory.appendEvent("llm_invalid_action", {
+				output.log(formatSystemMessage(message, getCurrentTick()));
+				memory.appendEvent(getCurrentTick(), "llm_invalid_action", {
 					error: validation.error,
 					raw: result.raw,
 				});
@@ -362,8 +370,8 @@ async function startActionLoop(): Promise<void> {
 				const message = target
 					? `Invalid action from LLM: Unknown nearby target: ${target}`
 					: "Invalid action from LLM: Missing target_id";
-				output.log(formatSystemMessage(message));
-				memory.appendEvent("llm_invalid_action", {
+				output.log(formatSystemMessage(message, getCurrentTick()));
+				memory.appendEvent(getCurrentTick(), "llm_invalid_action", {
 					error: message,
 					raw: result.raw,
 				});
@@ -373,7 +381,7 @@ async function startActionLoop(): Promise<void> {
 
 			const actionName = validation.action.action;
 			const mission = validation.action.mission ?? null;
-			const actionStamp = getActionStamp();
+			const actionStamp = getCurrentTick();
 			if (actionName === "forum_post") {
 				const title = String(validation.action.args?.title ?? "").trim();
 				const category = String(validation.action.args?.category ?? "").trim();
@@ -392,7 +400,7 @@ async function startActionLoop(): Promise<void> {
 			if (client.state.player?.username && mission) {
 				gameState.currentMission = mission;
 				memory.setMission(client.state.player.username, mission);
-				output.log(formatAiMission(mission));
+				output.log(formatAiMission(mission, getCurrentTick()));
 				updateOutput();
 			}
 			if (gameState.pendingActionId !== null) {
@@ -407,6 +415,7 @@ async function startActionLoop(): Promise<void> {
 				gameState.pendingActionTimeout = null;
 			}
 			const actionId = memory.appendActionWithId(
+				getCurrentTick(),
 				actionName,
 				validation.action.args ?? {},
 				promptExcerpt,
@@ -432,8 +441,12 @@ async function startActionLoop(): Promise<void> {
 					String(validation.action.args?.target_system ?? "").trim() || null;
 			}
 			dispatchAction(client, validation.action);
-			output.log(formatAiAction(actionName, validation.action.args));
-			memory.appendEvent("action_sent", { action: validation.action });
+			output.log(
+				formatAiAction(actionName, validation.action.args, getCurrentTick()),
+			);
+			memory.appendEvent(getCurrentTick(), "action_sent", {
+				action: validation.action,
+			});
 
 			if (actionName === "travel") {
 				client.getSystem();
@@ -443,12 +456,17 @@ async function startActionLoop(): Promise<void> {
 			const message = (error as Error).message;
 			if (error instanceof OllamaTimeoutError) {
 				output.log(
-					formatSystemMessage(`LLM timeout: ${message}. Retrying next tick.`),
+					formatSystemMessage(
+						`LLM timeout: ${message}. Retrying next tick.`,
+						getCurrentTick(),
+					),
 				);
-				memory.appendEvent("llm_timeout", { message });
+				memory.appendEvent(getCurrentTick(), "llm_timeout", { message });
 			} else {
-				output.log(formatSystemMessage(`Loop error: ${message}`));
-				memory.appendEvent("loop_error", { message });
+				output.log(
+					formatSystemMessage(`Loop error: ${message}`, getCurrentTick()),
+				);
+				memory.appendEvent(getCurrentTick(), "loop_error", { message });
 			}
 		}
 
@@ -476,21 +494,24 @@ process.on("SIGTERM", shutdown);
 client.on("raw_message", (data: { type: string; payload: unknown }) => {
 	const rawType = String(data.type ?? "");
 	if (!rawType) return;
-	memory.appendEvent(`raw_${rawType}`, data.payload);
+	memory.appendEvent(getCurrentTick(), `raw_${rawType}`, data.payload);
 	if (rawType.startsWith("forum_") || rawType === "mining_yield") {
 		captureActionResult(rawType, data.payload);
-		memory.appendEvent(rawType, data.payload);
+		memory.appendEvent(getCurrentTick(), rawType, data.payload);
 	}
 });
 
 client.on<WelcomePayload>("welcome", async (data) => {
-	output.log(formatWelcome(data));
-	if (data.motd) output.log(formatMotd(data.motd));
-	memory.appendEvent("welcome", data);
+	output.log(formatWelcome(data, getCurrentTick()));
+	if (data.motd) output.log(formatMotd(data.motd, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "welcome", data);
 
 	if (gameState.credentials) {
 		output.log(
-			formatSystemMessage(`Auto-login as ${gameState.credentials.username}`),
+			formatSystemMessage(
+				`Auto-login as ${gameState.credentials.username}`,
+				getCurrentTick(),
+			),
 		);
 		client.login(gameState.credentials.username, gameState.credentials.token);
 	} else {
@@ -505,18 +526,26 @@ client.on<WelcomePayload>("welcome", async (data) => {
 });
 
 client.on<RegisteredPayload>("registered", (data) => {
-	memory.appendEvent("registered", data);
+	memory.appendEvent(getCurrentTick(), "registered", data);
 
 	if (!data.token) {
 		output.log(
-			formatSystemMessage("FATAL: Server sent registered event without token"),
+			formatSystemMessage(
+				"FATAL: Server sent registered event without token",
+				getCurrentTick(),
+			),
 		);
 		output.logDebug("REGISTERED_NO_TOKEN", JSON.stringify(data, null, 2));
 		shutdown();
 		return;
 	}
 
-	output.log(formatSystemMessage("Registration successful - token received"));
+	output.log(
+		formatSystemMessage(
+			"Registration successful - token received",
+			getCurrentTick(),
+		),
+	);
 	output.logDebug("REGISTERED_PAYLOAD", JSON.stringify(data, null, 2));
 
 	if (gameState.pendingRegistration) {
@@ -525,8 +554,8 @@ client.on<RegisteredPayload>("registered", (data) => {
 });
 
 client.on<LoggedInPayload>("logged_in", async (data) => {
-	output.log(formatLoggedIn(data));
-	memory.appendEvent("logged_in", data);
+	output.log(formatLoggedIn(data, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "logged_in", data);
 	output.logDebug("LOGGED_IN_PAYLOAD", JSON.stringify(data, null, 2));
 
 	// CASE 1: New registration - save credentials
@@ -537,6 +566,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 			output.log(
 				formatSystemMessage(
 					"FATAL: Logged in but no token was captured from registered event",
+					getCurrentTick(),
 				),
 			);
 			shutdown();
@@ -563,6 +593,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 			output.log(
 				formatSystemMessage(
 					`Credentials saved for ${gameState.pendingRegistration.username}`,
+					getCurrentTick(),
 				),
 			);
 			gameState.pendingRegistration = null;
@@ -570,6 +601,7 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 			output.log(
 				formatSystemMessage(
 					`FATAL: Failed to save credentials: ${(err as Error).message}`,
+					getCurrentTick(),
 				),
 			);
 			shutdown();
@@ -583,17 +615,19 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 
 client.on<ErrorPayload>("error", (data) => {
 	captureActionResult("error", data);
-	output.log(formatError(data));
-	memory.appendEvent("error", data);
+	output.log(formatError(data, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "error", data);
 	if (data.code === "invalid_credentials") {
 		output.log(
 			formatSystemMessage(
 				"FATAL: Invalid credentials. The saved token is invalid or expired.",
+				getCurrentTick(),
 			),
 		);
 		output.log(
 			formatSystemMessage(
 				`Delete ${config.memoryPath} and run again to create a new account.`,
+				getCurrentTick(),
 			),
 		);
 		shutdown();
@@ -610,6 +644,7 @@ client.on<ErrorPayload>("error", (data) => {
 			output.log(
 				formatSystemMessage(
 					"Username taken. Requesting a new registration name...",
+					getCurrentTick(),
 				),
 			);
 			gameState.pendingRegistration = null;
@@ -626,6 +661,7 @@ client.on<ErrorPayload>("error", (data) => {
 			output.log(
 				formatSystemMessage(
 					"Username taken repeatedly. Falling back to random name.",
+					getCurrentTick(),
 				),
 			);
 			const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
@@ -648,7 +684,7 @@ client.on<ErrorPayload>("error", (data) => {
 });
 
 client.on<StateUpdatePayload>("state_update", async (data) => {
-	memory.appendEvent("state_update", data);
+	memory.appendEvent(getCurrentTick(), "state_update", data);
 
 	// Ignore state updates before authentication
 	if (!client.state.authenticated) {
@@ -674,7 +710,10 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 			const diff = data.player.credits - (gameState.lastCredits ?? 0);
 			const sign = diff > 0 ? "+" : "";
 			output.log(
-				formatSystemMessage(`Credits: ${data.player.credits} (${sign}${diff})`),
+				formatSystemMessage(
+					`Credits: ${data.player.credits} (${sign}${diff})`,
+					getCurrentTick(),
+				),
 			);
 			gameState.lastCredits = data.player.credits;
 		}
@@ -686,9 +725,9 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 
 	// Log combat state changes
 	if (gameState.inCombat && !wasInCombat) {
-		output.log(formatSystemMessage("COMBAT STARTED"));
+		output.log(formatSystemMessage("COMBAT STARTED", getCurrentTick()));
 	} else if (!gameState.inCombat && wasInCombat) {
-		output.log(formatSystemMessage("Combat ended"));
+		output.log(formatSystemMessage("Combat ended", getCurrentTick()));
 	}
 
 	updateOutput();
@@ -696,20 +735,20 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 });
 
 client.on<ChatMessage>("chat_message", (data) => {
-	output.log(formatChatMessage(data));
-	memory.appendEvent("chat_message", data);
+	output.log(formatChatMessage(data, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "chat_message", data);
 });
 
 client.on<ScanResultPayload>("scan_result", (data) => {
 	captureActionResult("scan_result", data);
-	output.log(formatScanResult(data));
-	memory.appendEvent("scan_result", data);
+	output.log(formatScanResult(data, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "scan_result", data);
 });
 
 client.on("mining_yield", (data: Record<string, unknown>) => {
 	captureActionResult("mining_yield", data);
-	output.log(formatMiningYield(data));
-	memory.appendEvent("mining_yield", data);
+	output.log(formatMiningYield(data, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "mining_yield", data);
 });
 
 client.on("ok", (data: Record<string, unknown>) => {
@@ -718,8 +757,8 @@ client.on("ok", (data: Record<string, unknown>) => {
 		jumpTarget: gameState.lastJumpTarget,
 		travelTarget: gameState.lastTravelTarget,
 	};
-	output.log(formatOk(data, okContext));
-	memory.appendEvent("ok", data);
+	output.log(formatOk(data, okContext, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "ok", data);
 	updateWorldSnapshotFromOk(data);
 
 	const action = typeof data.action === "string" ? data.action : null;
@@ -755,16 +794,18 @@ client.on("ok", (data: Record<string, unknown>) => {
 
 client.on("version_info", (data: Record<string, unknown>) => {
 	const version = String(data.version ?? "unknown");
-	output.log(formatSystemMessage(`Version: ${version}`));
-	memory.appendEvent("version_info", data);
+	output.log(formatSystemMessage(`Version: ${version}`, getCurrentTick()));
+	memory.appendEvent(getCurrentTick(), "version_info", data);
 });
 
 gameState.credentials = await loadCredentials();
 
 console.log(`Instance: ${config.instanceName}`);
 console.log(`DB: ${config.memoryPath}`);
-output.log(formatSystemMessage(`Instance: ${config.instanceName}`));
-output.log(formatSystemMessage(`DB: ${config.memoryPath}`));
+output.log(
+	formatSystemMessage(`Instance: ${config.instanceName}`, getCurrentTick()),
+);
+output.log(formatSystemMessage(`DB: ${config.memoryPath}`, getCurrentTick()));
 
 await client.connect();
 updateOutput();

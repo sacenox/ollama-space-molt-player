@@ -21,81 +21,107 @@ export interface FormattedMessage {
 	text: string;
 	category: LogCategory;
 	timestamp: string;
+	tick?: number;
 }
 
-function getTimestamp(): string {
+function getTimestamp(tick?: number): string {
 	const now = new Date();
 	const h = String(now.getHours()).padStart(2, "0");
 	const m = String(now.getMinutes()).padStart(2, "0");
 	const s = String(now.getSeconds()).padStart(2, "0");
-	return `${h}:${m}:${s}`;
+	const wallClock = `${h}:${m}:${s}`;
+
+	if (tick !== undefined && tick >= 0) {
+		return `T${tick} [${wallClock}]`;
+	}
+	return `[${wallClock}]`;
 }
 
 function formatWithTimestamp(
 	message: string,
 	category: LogCategory,
+	tick?: number,
 ): FormattedMessage {
-	const timestamp = getTimestamp();
-	const ts = applyColor(`[${timestamp}]`, COLORS.MSG_TIMESTAMP);
+	const timestamp = getTimestamp(tick);
+	const ts = applyColor(timestamp, COLORS.MSG_TIMESTAMP);
 	return {
 		text: `${ts} ${message}`,
 		category,
 		timestamp,
+		tick,
 	};
 }
 
 // Welcome message
-export function formatWelcome(data: WelcomePayload): FormattedMessage {
+export function formatWelcome(
+	data: WelcomePayload,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(
 		`Connected to SpaceMolt v${data.version} (tick rate: ${data.tick_rate}s)`,
 		COLORS.MSG_SUCCESS,
 	);
-	return formatWithTimestamp(msg, "system");
+	return formatWithTimestamp(msg, "system", tick);
 }
 
-export function formatMotd(motd: string): FormattedMessage {
+export function formatMotd(motd: string, tick?: number): FormattedMessage {
 	const msg = applyColor(`MOTD: ${motd}`, COLORS.MSG_CHAT);
-	return formatWithTimestamp(msg, "system");
+	return formatWithTimestamp(msg, "system", tick);
 }
 
 // Registration
-export function formatRegistered(_data: RegisteredPayload): FormattedMessage {
+export function formatRegistered(
+	_data: RegisteredPayload,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(
 		`Registration successful - credentials saved`,
 		COLORS.MSG_SUCCESS,
 	);
-	return formatWithTimestamp(msg, "system");
+	return formatWithTimestamp(msg, "system", tick);
 }
 
 // Login
-export function formatLoggedIn(data: LoggedInPayload): FormattedMessage {
+export function formatLoggedIn(
+	data: LoggedInPayload,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(
 		`Logged in as ${data.player.username} (${data.player.empire})`,
 		COLORS.MSG_SUCCESS,
 	);
-	return formatWithTimestamp(msg, "game");
+	return formatWithTimestamp(msg, "game", tick);
 }
 
 // Errors
-export function formatError(data: ErrorPayload): FormattedMessage {
+export function formatError(
+	data: ErrorPayload,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(
 		`Error [${data.code}]: ${data.message}`,
 		COLORS.MSG_ERROR,
 	);
-	return formatWithTimestamp(msg, "system");
+	return formatWithTimestamp(msg, "system", tick);
 }
 
 // Chat messages
-export function formatChatMessage(data: ChatMessage): FormattedMessage {
+export function formatChatMessage(
+	data: ChatMessage,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(
 		`[${data.channel}] ${data.sender}: ${data.content}`,
 		COLORS.MSG_CHAT,
 	);
-	return formatWithTimestamp(msg, "chat");
+	return formatWithTimestamp(msg, "chat", tick);
 }
 
 // Scan results
-export function formatScanResult(data: ScanResultPayload): FormattedMessage {
+export function formatScanResult(
+	data: ScanResultPayload,
+	tick?: number,
+): FormattedMessage {
 	const parts: string[] = [];
 
 	if (data.player) {
@@ -118,23 +144,25 @@ export function formatScanResult(data: ScanResultPayload): FormattedMessage {
 	}
 
 	const msg = `Scan result: ${parts.join(", ")}`;
-	return formatWithTimestamp(msg, "game");
+	return formatWithTimestamp(msg, "game", tick);
 }
 
 // Mining yield results
 export function formatMiningYield(
 	data: Record<string, unknown>,
+	tick?: number,
 ): FormattedMessage {
 	const resource = String(data.resource_id ?? "ore");
 	const quantity = Number(data.quantity ?? 0);
 	const msg = applyColor(`Mined ${quantity}x ${resource}`, COLORS.MSG_SUCCESS);
-	return formatWithTimestamp(msg, "game");
+	return formatWithTimestamp(msg, "game", tick);
 }
 
 // OK messages - format based on action type
 export function formatOk(
 	data: Record<string, unknown>,
 	context?: OkContext,
+	tick?: number,
 ): FormattedMessage {
 	const action = String(data.action ?? "");
 
@@ -144,13 +172,13 @@ export function formatOk(
 				data.target_poi ?? context?.travelTarget ?? "unknown",
 			);
 			const msg = applyColor(`Traveling to ${targetId}`, COLORS.MSG_SUCCESS);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "arrived": {
 			const poiId = String(data.poi_id ?? "destination");
 			const msg = applyColor(`Arrived at ${poiId}`, COLORS.MSG_SUCCESS);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "jump": {
@@ -161,7 +189,7 @@ export function formatOk(
 				`Jumping to ${targetSystem} system`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "jumped": {
@@ -170,23 +198,23 @@ export function formatOk(
 				`Jumped to ${systemId} system`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "dock": {
 			const baseId = String(data.base_id ?? "base");
 			const msg = applyColor(`Docked at ${baseId}`, COLORS.MSG_SUCCESS);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "undock": {
 			const msg = applyColor("Undocked from base", COLORS.MSG_SUCCESS);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "mine": {
 			const msg = applyColor("Mining...", COLORS.MSG_INFO);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "buy": {
@@ -197,7 +225,7 @@ export function formatOk(
 				`Bought ${quantity}x ${itemId} for ${cost} credits`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "sell": {
@@ -208,7 +236,7 @@ export function formatOk(
 				`Sold ${quantity}x ${itemId} for ${revenue} credits`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "repair": {
@@ -217,7 +245,7 @@ export function formatOk(
 				`Repaired ship (cost: ${cost} credits)`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "refuel": {
@@ -226,7 +254,7 @@ export function formatOk(
 				`Refueled ship (cost: ${cost} credits)`,
 				COLORS.MSG_SUCCESS,
 			);
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "attack": {
@@ -236,14 +264,14 @@ export function formatOk(
 				`Attacked ${targetId}${damage > 0 ? ` (${damage} damage)` : ""}`,
 				COLORS.STATUS_DANGER,
 			);
-			return formatWithTimestamp(msg, "combat");
+			return formatWithTimestamp(msg, "combat", tick);
 		}
 
 		default: {
 			// Generic OK message with summary
 			const summary = summarizeOkPayload(data);
 			const msg = `OK: ${summary}`;
-			return formatWithTimestamp(msg, "game");
+			return formatWithTimestamp(msg, "game", tick);
 		}
 	}
 }
@@ -273,16 +301,20 @@ function summarizeOkPayload(payload: Record<string, unknown>): string {
 }
 
 // AI-related messages
-export function formatAiThinking(thinking: string): FormattedMessage {
+export function formatAiThinking(
+	thinking: string,
+	tick?: number,
+): FormattedMessage {
 	const truncated =
 		thinking.length > 200 ? `${thinking.slice(0, 200)}...` : thinking;
 	const msg = applyColor(`[AI Thinking] ${truncated}`, COLORS.MSG_AI);
-	return formatWithTimestamp(msg, "ai");
+	return formatWithTimestamp(msg, "ai", tick);
 }
 
 export function formatAiAction(
 	action: string,
 	args?: Record<string, unknown>,
+	tick?: number,
 ): FormattedMessage {
 	const argsStr =
 		args && Object.keys(args).length > 0
@@ -291,23 +323,32 @@ export function formatAiAction(
 					.join(", ")})`
 			: "";
 	const msg = applyColor(`[AI Action] ${action}${argsStr}`, COLORS.MSG_AI);
-	return formatWithTimestamp(msg, "ai");
+	return formatWithTimestamp(msg, "ai", tick);
 }
 
-export function formatAiMission(mission: string): FormattedMessage {
+export function formatAiMission(
+	mission: string,
+	tick?: number,
+): FormattedMessage {
 	const msg = applyColor(`[AI Mission] ${mission}`, COLORS.MSG_AI);
-	return formatWithTimestamp(msg, "ai");
+	return formatWithTimestamp(msg, "ai", tick);
 }
 
 // Generic system message
-export function formatSystemMessage(message: string): FormattedMessage {
-	return formatWithTimestamp(message, "system");
+export function formatSystemMessage(
+	message: string,
+	tick?: number,
+): FormattedMessage {
+	return formatWithTimestamp(message, "system", tick);
 }
 
-export function formatCombatEnd(victory: boolean): FormattedMessage {
+export function formatCombatEnd(
+	victory: boolean,
+	tick?: number,
+): FormattedMessage {
 	const result = victory ? "Victory" : "Defeated";
 	const msg = applyColor(`Combat ended - ${result}`, COLORS.STATUS_DANGER);
-	return formatWithTimestamp(msg, "combat");
+	return formatWithTimestamp(msg, "combat", tick);
 }
 
 export function formatDamageTaken(
@@ -316,21 +357,23 @@ export function formatDamageTaken(
 	maxHull: number,
 	shield: number,
 	maxShield: number,
+	tick?: number,
 ): FormattedMessage {
 	const msg = applyColor(
 		`Took ${damage} damage (Hull: ${hull}/${maxHull}, Shield: ${shield}/${maxShield})`,
 		COLORS.STATUS_DANGER,
 	);
-	return formatWithTimestamp(msg, "combat");
+	return formatWithTimestamp(msg, "combat", tick);
 }
 
 export function formatDamageDealt(
 	damage: number,
 	targetId: string,
+	tick?: number,
 ): FormattedMessage {
 	const msg = applyColor(
 		`Dealt ${damage} damage to ${targetId}`,
 		COLORS.STATUS_DANGER,
 	);
-	return formatWithTimestamp(msg, "combat");
+	return formatWithTimestamp(msg, "combat", tick);
 }

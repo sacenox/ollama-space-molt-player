@@ -15,6 +15,8 @@ export interface PromptContext {
 	recentHistory: HistoryEntry[];
 	memorySummary?: string | null;
 	currentMission: string | null;
+	currentTick: number;
+	memory: MemoryStore;
 	empire?: EmpireID;
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
@@ -204,7 +206,10 @@ export function buildActionPrompt(context: PromptContext): string {
 	const lastActionText = context.lastActionResult?.trim()
 		? context.lastActionResult.trim()
 		: "No actions yet.";
-	const forumContextBlock = formatForumContext(context.recentHistory);
+	const forumContextBlock = formatForumContext(
+		context.recentHistory,
+		context.currentTick,
+	);
 	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
 	const missionText = context.currentMission?.trim()
 		? context.currentMission.trim()
@@ -286,6 +291,7 @@ YOUR PLAYER:
 ${stateText}
 
 WORLD INFORMATION:
+Game tick: T${context.memory.getLatestTick()}
 ${worldText}
 
 MEMORY SUMMARY:
@@ -610,12 +616,15 @@ function formatWorldSnapshot(
 	return lines.join("\n");
 }
 
-export function buildSummaryPrompt(history: HistoryEntry[]): string {
+export function buildSummaryPrompt(
+	history: HistoryEntry[],
+	currentTick: number,
+): string {
 	if (history.length === 0) {
 		return "Summarize the following game history: (empty history)\n\nProvide ONLY the text: No recent activity.";
 	}
 
-	const historyText = formatHistoryForSummary(history);
+	const historyText = formatHistoryForSummary(history, currentTick);
 
 	return `You are summarizing recent game events for a SpaceMolt AI agent. The agent needs a concise description (NOT bullet points) of what happened recently to maintain context.
 
@@ -636,13 +645,17 @@ ${historyText}
 Provide ONLY the summary text. No extra formatting, no bullet points, no labels.`;
 }
 
-function formatHistoryForSummary(history: HistoryEntry[]): string {
+function formatHistoryForSummary(
+	history: HistoryEntry[],
+	currentTick: number,
+): string {
 	const lines: string[] = [];
 
 	for (const entry of history) {
 		if (entry.kind === "action") {
 			const argsText = formatActionArgs(entry.args);
-			lines.push(`${entry.ts} ACTION: ${entry.action}${argsText}`.trim());
+			const tickTime = formatTickTime(entry.tick, currentTick);
+			lines.push(`${tickTime} ACTION: ${entry.action}${argsText}`.trim());
 			continue;
 		}
 
@@ -656,23 +669,28 @@ function formatHistoryForSummary(history: HistoryEntry[]): string {
 		}
 
 		const summary = summarizeEvent(entry);
+		const tickTime = formatTickTime(entry.tick, currentTick);
 		if (summary) {
-			lines.push(`${entry.ts} EVENT: ${entry.type} ${summary}`.trim());
+			lines.push(`${tickTime} EVENT: ${entry.type} ${summary}`.trim());
 		} else {
-			lines.push(`${entry.ts} EVENT: ${entry.type}`.trim());
+			lines.push(`${tickTime} EVENT: ${entry.type}`.trim());
 		}
 	}
 
 	return lines.join("\n");
 }
 
-export function buildLastActionResult(memory: MemoryStore): string {
+export function buildLastActionResult(
+	memory: MemoryStore,
+	currentTick: number,
+): string {
 	const lastAction = memory.getLastActionWithResults();
 	if (!lastAction) return "No actions yet.";
 
 	const argsText = formatActionArgs(lastAction.action.args);
+	const tickTime = formatTickTime(lastAction.action.tick, currentTick);
 	const header =
-		`Action: ${lastAction.action.ts} ${lastAction.action.action}${argsText}`.trim();
+		`Action: ${tickTime} ${lastAction.action.action}${argsText}`.trim();
 
 	if (lastAction.results.length === 0) {
 		return `${header}\nResult: No response received (timeout or pending).`;
@@ -832,10 +850,13 @@ export function buildLastActionResult(memory: MemoryStore): string {
 	return lines.join("\n");
 }
 
-function formatForumContext(history: HistoryEntry[]): string {
+function formatForumContext(
+	history: HistoryEntry[],
+	currentTick: number,
+): string {
 	if (history.length === 0) return "";
 
-	const lastForumCheck = findLastForumCheck(history);
+	const lastForumCheck = findLastForumCheck(history, currentTick);
 	const createdPosts = findRecentForumPosts(history, 3);
 	const repliedThreads = findRecentRepliedThreads(history, 3);
 
@@ -848,7 +869,7 @@ function formatForumContext(history: HistoryEntry[]): string {
 		for (const post of createdPosts) {
 			const categoryText = post.category ? `[${post.category}] ` : "";
 			lines.push(
-				`  - ${categoryText}${post.title ?? "(untitled)"} (${post.ts})`,
+				`  - ${categoryText}${post.title ?? "(untitled)"} (T${post.tick})`,
 			);
 		}
 	}
@@ -857,7 +878,7 @@ function formatForumContext(history: HistoryEntry[]): string {
 		lines.push("  (none)");
 	} else {
 		for (const thread of repliedThreads) {
-			lines.push(`  - ${thread.threadId} (${thread.ts})`);
+			lines.push(`  - ${thread.threadId} (T${thread.tick})`);
 		}
 	}
 
@@ -1057,26 +1078,29 @@ function getObjectField(
 }
 
 type ForumCheckInfo = {
-	ts: string;
+	tick: number;
 	relative: string;
 };
 
 type ForumPostInfo = {
-	ts: string;
+	tick: number;
 	category: string | null;
 	title: string | null;
 };
 
 type ForumThreadInfo = {
-	ts: string;
+	tick: number;
 	threadId: string;
 };
 
-function findLastForumCheck(history: HistoryEntry[]): ForumCheckInfo | null {
+function findLastForumCheck(
+	history: HistoryEntry[],
+	currentTick: number,
+): ForumCheckInfo | null {
 	for (const entry of history) {
 		if (entry.kind !== "action" || entry.action !== "forum") continue;
-		const relative = formatRelativeTime(entry.ts);
-		return { ts: entry.ts, relative };
+		const relative = formatTickTime(entry.tick, currentTick);
+		return { tick: entry.tick, relative };
 	}
 	return null;
 }
@@ -1091,7 +1115,7 @@ function findRecentForumPosts(
 		const args = parseActionArgs(entry.args);
 		const category = typeof args?.category === "string" ? args.category : null;
 		const title = typeof args?.title === "string" ? args.title : null;
-		posts.push({ ts: entry.ts, category, title });
+		posts.push({ tick: entry.tick, category, title });
 		if (posts.length >= limit) break;
 	}
 	return posts;
@@ -1109,7 +1133,7 @@ function findRecentRepliedThreads(
 		const threadId = typeof args?.thread_id === "string" ? args.thread_id : "";
 		if (!threadId || seen.has(threadId)) continue;
 		seen.add(threadId);
-		threads.push({ ts: entry.ts, threadId });
+		threads.push({ tick: entry.tick, threadId });
 		if (threads.length >= limit) break;
 	}
 	return threads;
@@ -1130,22 +1154,16 @@ function parseActionArgs(value: string | null): Record<string, unknown> | null {
 
 function formatForumCheckLine(info: ForumCheckInfo | null): string {
 	if (!info) return "unknown";
-	return `${info.relative} (${info.ts})`;
+	return info.relative;
 }
 
-function formatRelativeTime(ts: string): string {
-	const parsed = Date.parse(ts);
-	if (!Number.isFinite(parsed)) return "unknown";
-	const now = Date.now();
-	const diffMs = Math.max(0, now - parsed);
-	const seconds = Math.round(diffMs / 1000);
-	if (seconds < 60) return `${seconds}s ago`;
-	const minutes = Math.round(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.round(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.round(hours / 24);
-	return `${days}d ago`;
+function formatTickTime(tick: number, currentTick: number): string {
+	if (tick === 0) return "T0 (before game start)";
+	const diff = currentTick - tick;
+	if (diff === 0) return `T${tick} (current)`;
+	if (diff === 1) return `T${tick} (1 tick ago)`;
+	if (diff < 0) return `T${tick} (future)`;
+	return `T${tick} (${diff} ticks ago)`;
 }
 
 function formatActionArgs(argsRaw: string | null): string {

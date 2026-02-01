@@ -19,6 +19,7 @@ export interface Snapshot {
 export interface StoredAction {
 	id: number;
 	ts: string;
+	tick: number;
 	action: string;
 	args: string | null;
 	prompt_excerpt: string | null;
@@ -28,12 +29,14 @@ export interface StoredAction {
 export interface StoredEvent {
 	id: number;
 	ts: string;
+	tick: number;
 	type: string;
 	payload: string | null;
 }
 
 export interface ActionResult {
 	ts: string;
+	tick: number;
 	result_type: string;
 	payload: string | null;
 }
@@ -42,12 +45,14 @@ export type HistoryEntry =
 	| {
 			kind: "action";
 			ts: string;
+			tick: number;
 			action: string;
 			args: string | null;
 	  }
 	| {
 			kind: "event";
 			ts: string;
+			tick: number;
 			type: string;
 			payload: string | null;
 	  };
@@ -64,7 +69,7 @@ export class MemoryStore {
 
 	private init(): void {
 		// Run migrations BEFORE creating tables to handle renames
-		this.migrate();
+		this.migratePreCreate();
 
 		this.db.exec(`
       CREATE TABLE IF NOT EXISTS actions (
@@ -116,32 +121,21 @@ export class MemoryStore {
         speech_style TEXT NOT NULL DEFAULT 'mythic'
       );
     `);
+
+		// Run column additions AFTER tables are created
+		this.migratePostCreate();
 	}
 
-	private migrate(): void {
-		// Add alignment + speech_style columns if they don't exist (for existing DBs)
-		const columns = this.db.query("PRAGMA table_info(credentials)").all() as {
-			name: string;
-		}[];
-		const hasAlignment = columns.some((col) => col.name === "alignment");
-		const hasSpeechStyle = columns.some((col) => col.name === "speech_style");
-		if (!hasAlignment) {
-			this.db.exec(
-				"ALTER TABLE credentials ADD COLUMN alignment TEXT NOT NULL DEFAULT 'neutral'",
-			);
-		}
-		if (!hasSpeechStyle) {
-			this.db.exec(
-				"ALTER TABLE credentials ADD COLUMN speech_style TEXT NOT NULL DEFAULT 'mythic'",
-			);
-		}
-
-		// Migrate llm_goals to llm_missions
+	private migratePreCreate(): void {
+		// Check which tables exist
 		const tables = this.db
 			.query("SELECT name FROM sqlite_master WHERE type='table'")
 			.all() as { name: string }[];
-		const hasGoalsTable = tables.some((t) => t.name === "llm_goals");
-		const hasMissionsTable = tables.some((t) => t.name === "llm_missions");
+		const tableNames = tables.map((t) => t.name);
+
+		// Migrate llm_goals to llm_missions
+		const hasGoalsTable = tableNames.includes("llm_goals");
+		const hasMissionsTable = tableNames.includes("llm_missions");
 
 		if (hasGoalsTable && !hasMissionsTable) {
 			// Rename table from llm_goals to llm_missions
@@ -157,6 +151,62 @@ export class MemoryStore {
 			if (hasGoalColumn) {
 				this.db.exec("ALTER TABLE llm_missions RENAME COLUMN goal TO mission");
 			}
+		}
+	}
+
+	private migratePostCreate(): void {
+		// Add alignment + speech_style columns if they don't exist (for existing DBs)
+		const credColumns = this.db
+			.query("PRAGMA table_info(credentials)")
+			.all() as {
+			name: string;
+		}[];
+		const hasAlignment = credColumns.some((col) => col.name === "alignment");
+		const hasSpeechStyle = credColumns.some(
+			(col) => col.name === "speech_style",
+		);
+		if (!hasAlignment) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN alignment TEXT NOT NULL DEFAULT 'neutral'",
+			);
+		}
+		if (!hasSpeechStyle) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN speech_style TEXT NOT NULL DEFAULT 'mythic'",
+			);
+		}
+
+		// Add tick columns to actions, action_results, and events tables
+		const actionColumns = this.db.query("PRAGMA table_info(actions)").all() as {
+			name: string;
+		}[];
+		const actionsHasTick = actionColumns.some((col) => col.name === "tick");
+		if (!actionsHasTick) {
+			this.db.exec(
+				"ALTER TABLE actions ADD COLUMN tick INTEGER NOT NULL DEFAULT 0",
+			);
+		}
+
+		const actionResultColumns = this.db
+			.query("PRAGMA table_info(action_results)")
+			.all() as { name: string }[];
+		const actionResultsHasTick = actionResultColumns.some(
+			(col) => col.name === "tick",
+		);
+		if (!actionResultsHasTick) {
+			this.db.exec(
+				"ALTER TABLE action_results ADD COLUMN tick INTEGER NOT NULL DEFAULT 0",
+			);
+		}
+
+		const eventColumns = this.db.query("PRAGMA table_info(events)").all() as {
+			name: string;
+		}[];
+		const eventsHasTick = eventColumns.some((col) => col.name === "tick");
+		if (!eventsHasTick) {
+			this.db.exec(
+				"ALTER TABLE events ADD COLUMN tick INTEGER NOT NULL DEFAULT 0",
+			);
 		}
 	}
 
@@ -199,6 +249,7 @@ export class MemoryStore {
 	}
 
 	appendAction(
+		tick: number,
 		action: string,
 		args: unknown,
 		promptExcerpt: string,
@@ -206,10 +257,11 @@ export class MemoryStore {
 	): void {
 		this.db
 			.query(
-				"INSERT INTO actions (ts, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?, ?)",
 			)
 			.run(
 				nowIso(),
+				tick,
 				action,
 				toJson(args),
 				truncate(promptExcerpt),
@@ -218,6 +270,7 @@ export class MemoryStore {
 	}
 
 	appendActionWithId(
+		tick: number,
 		action: string,
 		args: unknown,
 		promptExcerpt: string,
@@ -225,10 +278,11 @@ export class MemoryStore {
 	): number {
 		const result = this.db
 			.query(
-				"INSERT INTO actions (ts, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?, ?)",
 			)
 			.run(
 				nowIso(),
+				tick,
 				action,
 				toJson(args),
 				truncate(promptExcerpt),
@@ -239,20 +293,21 @@ export class MemoryStore {
 
 	appendActionResult(
 		actionId: number,
+		tick: number,
 		resultType: string,
 		payload: unknown,
 	): void {
 		this.db
 			.query(
-				"INSERT INTO action_results (action_id, ts, result_type, payload) VALUES (?, ?, ?, ?)",
+				"INSERT INTO action_results (action_id, ts, tick, result_type, payload) VALUES (?, ?, ?, ?, ?)",
 			)
-			.run(actionId, nowIso(), resultType, toJson(payload));
+			.run(actionId, nowIso(), tick, resultType, toJson(payload));
 	}
 
-	appendEvent(type: string, payload: unknown): void {
+	appendEvent(tick: number, type: string, payload: unknown): void {
 		this.db
-			.query("INSERT INTO events (ts, type, payload) VALUES (?, ?, ?)")
-			.run(nowIso(), type, toJson(payload));
+			.query("INSERT INTO events (ts, tick, type, payload) VALUES (?, ?, ?, ?)")
+			.run(nowIso(), tick, type, toJson(payload));
 	}
 
 	saveSnapshot(snapshot: Snapshot): void {
@@ -293,7 +348,7 @@ export class MemoryStore {
 	getRecentActions(limit: number): StoredAction[] {
 		const rows = this.db
 			.query(
-				"SELECT id, ts, action, args, prompt_excerpt, model_raw FROM actions ORDER BY id DESC LIMIT ?",
+				"SELECT id, ts, tick, action, args, prompt_excerpt, model_raw FROM actions ORDER BY id DESC LIMIT ?",
 			)
 			.all(limit) as StoredAction[];
 		return rows.reverse();
@@ -302,7 +357,7 @@ export class MemoryStore {
 	getRecentEvents(limit: number): StoredEvent[] {
 		const rows = this.db
 			.query(
-				"SELECT id, ts, type, payload FROM events ORDER BY id DESC LIMIT ?",
+				"SELECT id, ts, tick, type, payload FROM events ORDER BY id DESC LIMIT ?",
 			)
 			.all(limit) as StoredEvent[];
 		return rows.reverse();
@@ -312,12 +367,14 @@ export class MemoryStore {
 		const actions = this.getRecentActions(actionLimit).map((row) => ({
 			kind: "action" as const,
 			ts: row.ts,
+			tick: row.tick,
 			action: row.action,
 			args: row.args,
 		}));
 		const events = this.getRecentEvents(eventLimit).map((row) => ({
 			kind: "event" as const,
 			ts: row.ts,
+			tick: row.tick,
 			type: row.type,
 			payload: row.payload,
 		}));
@@ -338,16 +395,23 @@ export class MemoryStore {
 	} | null {
 		const action = this.db
 			.query(
-				"SELECT id, ts, action, args, prompt_excerpt, model_raw FROM actions ORDER BY id DESC LIMIT 1",
+				"SELECT id, ts, tick, action, args, prompt_excerpt, model_raw FROM actions ORDER BY id DESC LIMIT 1",
 			)
 			.get() as StoredAction | undefined;
 		if (!action) return null;
 		const results = this.db
 			.query(
-				"SELECT ts, result_type, payload FROM action_results WHERE action_id = ? ORDER BY id ASC",
+				"SELECT ts, tick, result_type, payload FROM action_results WHERE action_id = ? ORDER BY id ASC",
 			)
 			.all(action.id) as ActionResult[];
 		return { action, results };
+	}
+
+	getLatestTick(): number {
+		const row = this.db
+			.query("SELECT tick FROM state_snapshots ORDER BY id DESC LIMIT 1")
+			.get() as { tick?: number } | undefined;
+		return row?.tick ?? 0;
 	}
 }
 
