@@ -1,3 +1,4 @@
+import { appendFileSync, writeFileSync } from "node:fs";
 import type { OutputInterface } from "../output-interface";
 import type { FormattedMessage } from "../tui/formatters";
 import type { TuiUpdateData } from "../tui/index";
@@ -31,12 +32,11 @@ export class FileLoggerOutput implements OutputInterface {
 		tick: null,
 	};
 	private lastHeartbeatTick: number | null = null;
-	private writeQueue: Promise<void> = Promise.resolve();
 
 	constructor(options: FileLoggerOptions) {
 		this.uiLogPath = options.uiLogPath;
 		this.debugLogPath = options.debugLogPath;
-		this.writeQueue = this.resetLogs();
+		this.resetLogs();
 	}
 
 	log(message: FormattedMessage): void {
@@ -181,29 +181,29 @@ export class FileLoggerOutput implements OutputInterface {
 	}
 
 	private appendUiLine(line: string): void {
-		this.enqueueWrite(this.uiLogPath, `${line}\n`);
+		try {
+			appendFileSync(this.uiLogPath, `${line}\n`, "utf8");
+		} catch (error) {
+			console.error(
+				`Failed to write log ${this.uiLogPath}: ${(error as Error).message}`,
+			);
+		}
 	}
 
 	private appendDebugEntry(entry: string): void {
-		this.enqueueWrite(this.debugLogPath, entry);
-	}
-
-	private enqueueWrite(path: string, content: string): void {
-		this.writeQueue = this.writeQueue.then(async () => {
-			try {
-				await Bun.write(path, content, { append: true });
-			} catch (error) {
-				console.error(
-					`Failed to write log ${path}: ${(error as Error).message}`,
-				);
-			}
-		});
-	}
-
-	private async resetLogs(): Promise<void> {
 		try {
-			await Bun.write(this.uiLogPath, "");
-			await Bun.write(this.debugLogPath, "");
+			appendFileSync(this.debugLogPath, entry, "utf8");
+		} catch (error) {
+			console.error(
+				`Failed to write log ${this.debugLogPath}: ${(error as Error).message}`,
+			);
+		}
+	}
+
+	private resetLogs(): void {
+		try {
+			writeFileSync(this.uiLogPath, "", "utf8");
+			writeFileSync(this.debugLogPath, "", "utf8");
 		} catch (error) {
 			console.error(`Failed to initialize logs: ${(error as Error).message}`);
 		}

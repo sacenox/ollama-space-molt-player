@@ -2,6 +2,8 @@ import { SpaceMoltClient } from "../client/src/client";
 import type {
 	ChatMessage,
 	ErrorPayload,
+	LoggedInPayload,
+	RegisteredPayload,
 	ScanResultPayload,
 	StateUpdatePayload,
 	WelcomePayload,
@@ -22,6 +24,7 @@ import {
 	formatAiThinking,
 	formatChatMessage,
 	formatError,
+	formatLoggedIn,
 	formatMotd,
 	formatOk,
 	formatScanResult,
@@ -101,18 +104,19 @@ function updateOutput(): void {
 	});
 }
 
-function shouldStopForMaxTicks(): boolean {
+function shouldStopForMaxTicks(allowFallbackCount: boolean): boolean {
 	if (config.maxTicks === null) return false;
 	const currentTick = client.state.currentTick;
 	if (typeof currentTick === "number" && maxTicksStart !== null) {
-		return currentTick - maxTicksStart > config.maxTicks;
+		return currentTick - maxTicksStart >= config.maxTicks;
 	}
 	if (typeof currentTick === "number" && maxTicksStart === null) {
 		maxTicksStart = currentTick;
 		return false;
 	}
+	if (!allowFallbackCount) return false;
 	fallbackTickCount += 1;
-	return fallbackTickCount > config.maxTicks;
+	return fallbackTickCount >= config.maxTicks;
 }
 
 function saveSnapshot(): void {
@@ -181,19 +185,20 @@ async function startActionLoop(): Promise<void> {
 	actionLoopRunning = true;
 
 	while (client.state.authenticated) {
+		const inTransit = gameState.travelInProgress || gameState.jumpInProgress;
+		if (shouldStopForMaxTicks(!inTransit)) {
+			output.log(
+				formatSystemMessage(
+					`Max ticks reached (${config.maxTicks}). Shutting down.`,
+				),
+			);
+			shutdown();
+			break;
+		}
 		try {
-			if (gameState.travelInProgress || gameState.jumpInProgress) {
+			if (inTransit) {
 				await sleep(config.tickDelayMs);
 				continue;
-			}
-			if (shouldStopForMaxTicks()) {
-				output.log(
-					formatSystemMessage(
-						`Max ticks reached (${config.maxTicks}). Shutting down.`,
-					),
-				);
-				shutdown();
-				break;
 			}
 			const recentHistory = memory.getRecentHistory(
 				config.maxContextActions,
@@ -341,9 +346,96 @@ client.on<WelcomePayload>("welcome", async (data) => {
 	}
 });
 
+client.on<RegisteredPayload>("registered", (data) => {
+	memory.appendEvent("registered", data);
+
+	if (!data.token) {
+		output.log(
+			formatSystemMessage("FATAL: Server sent registered event without token"),
+		);
+		output.logDebug("REGISTERED_NO_TOKEN", JSON.stringify(data, null, 2));
+		shutdown();
+		return;
+	}
+
+	output.log(formatSystemMessage("Registration successful - token received"));
+	output.logDebug("REGISTERED_PAYLOAD", JSON.stringify(data, null, 2));
+
+	if (gameState.pendingRegistration) {
+		gameState.pendingRegistration.token = data.token;
+	}
+});
+
+client.on<LoggedInPayload>("logged_in", async (data) => {
+	output.log(formatLoggedIn(data));
+	memory.appendEvent("logged_in", data);
+	output.logDebug("LOGGED_IN_PAYLOAD", JSON.stringify(data, null, 2));
+
+	// CASE 1: New registration - save credentials
+	if (gameState.pendingRegistration) {
+		const token = gameState.pendingRegistration.token;
+
+		if (!token) {
+			output.log(
+				formatSystemMessage(
+					"FATAL: Logged in but no token was captured from registered event",
+				),
+			);
+			shutdown();
+			return;
+		}
+
+		try {
+			await saveCredentials(
+				gameState.pendingRegistration.username,
+				token,
+				gameState.pendingRegistration.personality,
+			);
+
+			gameState.credentials = {
+				username: gameState.pendingRegistration.username,
+				token: token,
+				personality: gameState.pendingRegistration.personality,
+			};
+
+			output.log(
+				formatSystemMessage(
+					`Credentials saved for ${gameState.pendingRegistration.username}`,
+				),
+			);
+			gameState.pendingRegistration = null;
+		} catch (err) {
+			output.log(
+				formatSystemMessage(
+					`FATAL: Failed to save credentials: ${(err as Error).message}`,
+				),
+			);
+			shutdown();
+			return;
+		}
+	}
+
+	// CASE 2: Initialize session (both new registration and existing login)
+	initializeSessionFromLoggedIn(data);
+});
+
 client.on<ErrorPayload>("error", (data) => {
 	output.log(formatError(data));
 	memory.appendEvent("error", data);
+	if (data.code === "invalid_credentials") {
+		output.log(
+			formatSystemMessage(
+				"FATAL: Invalid credentials. The saved token is invalid or expired.",
+			),
+		);
+		output.log(
+			formatSystemMessage(
+				`Delete ${config.credentialsFile} and run again to create a new account.`,
+			),
+		);
+		shutdown();
+		return;
+	}
 	if (data.code === "username_taken" && gameState.pendingRegistration) {
 		if (gameState.pendingRegistration.username) {
 			gameState.failedRegistrationNames.push(
@@ -386,60 +478,12 @@ client.on<ErrorPayload>("error", (data) => {
 client.on<StateUpdatePayload>("state_update", async (data) => {
 	memory.appendEvent("state_update", data);
 
-	// Handle new registration: server v0.3.0+ doesn't send registered/logged_in events
-	// It only sends state_update with player data after registration
-	if (
-		gameState.pendingRegistration &&
-		data.player &&
-		data.player.username === gameState.pendingRegistration.username
-	) {
-		// Use player.id as token (server v0.3.0+ behavior)
-		const token = gameState.pendingRegistration.token ?? data.player.id;
-		try {
-			await saveCredentials(
-				gameState.pendingRegistration.username,
-				token,
-				gameState.pendingRegistration.personality,
-			);
-			gameState.credentials = {
-				username: gameState.pendingRegistration.username,
-				token: token,
-				personality: gameState.pendingRegistration.personality,
-			};
-			output.log(
-				formatSystemMessage(
-					`Credentials saved for ${gameState.pendingRegistration.username}`,
-				),
-			);
-			gameState.pendingRegistration = null;
-
-			// Start action loop since logged_in won't fire on v0.3.0+
-			if (!client.state.authenticated) {
-				initializeSessionFromStateUpdate(data);
-			}
-		} catch (err) {
-			output.log(
-				formatSystemMessage(
-					`Failed to save credentials: ${(err as Error).message}`,
-				),
-			);
-		}
-	} else if (
-		!actionLoopRunning &&
-		!client.state.authenticated &&
-		gameState.credentials &&
-		data.player &&
-		data.player.username === gameState.credentials.username
-	) {
-		// Recovery: we have credentials, and received a state update for our user, but aren't flagged as authenticated/running.
-		// This might happen if we reconnected and missed a welcome/login event or similar, or just standard 0.3.0+ flow
-		initializeSessionFromStateUpdate(
-			data,
-			`Recovered session for ${data.player.username}`,
-		);
+	// Ignore state updates before authentication
+	if (!client.state.authenticated) {
+		return;
 	}
 
-	// Update cached player and ship data (only if provided)
+	// Update cached player and ship data
 	if (data.player) {
 		gameState.cachedPlayer = data.player;
 	}
@@ -576,12 +620,7 @@ function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
 	}
 }
 
-function initializeSessionFromStateUpdate(
-	data: StateUpdatePayload,
-	message?: string,
-): void {
-	if (!data.player) return;
-
+function initializeSessionFromLoggedIn(data: LoggedInPayload): void {
 	client.state.authenticated = true;
 	gameState.cachedPlayer = data.player;
 	gameState.cachedShip = data.ship;
@@ -589,22 +628,22 @@ function initializeSessionFromStateUpdate(
 
 	gameState.worldSnapshot.system = data.system;
 	gameState.worldSnapshot.poi = data.poi;
-	if (data.player.current_system)
+
+	if (data.player.current_system) {
 		gameState.lastSystemId = data.player.current_system;
-	if (data.player.current_poi) gameState.lastPoiId = data.player.current_poi;
+	}
+	if (data.player.current_poi) {
+		gameState.lastPoiId = data.player.current_poi;
+	}
+
 	gameState.lastDocked = Boolean(data.player.docked_at_base);
 	gameState.currentGoal = memory.getLatestGoal(data.player.username);
 
-	// Refresh world data
-	client.getSystem();
-	client.getPOI();
+	// Fetch base info if docked
 	if (data.player.docked_at_base) {
 		client.getBase();
 	}
 
-	if (message) {
-		output.log(formatSystemMessage(message));
-	}
 	updateOutput();
 	saveSnapshot();
 	startActionLoop();

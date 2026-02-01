@@ -43,6 +43,18 @@ Purpose: help coding agents work safely and consistently in this repo.
 - `--max-ticks <number>` - Stop after N game ticks (optional; runs indefinitely if not set)
 - Logs are truncated on each run (fresh logs per execution)
 
+### Reusing test accounts
+- Prefer reusing the same instance names to avoid creating new accounts on every run.
+- The credentials files are stored locally as `.spacemolt-bot-{name}.json` and should not be committed.
+
+**Known test instances:**
+- `debug-bot` -> `.spacemolt-bot-debug-bot.json`
+- `test-bot-1` -> `.spacemolt-bot-test-bot-1.json`
+- `test-bot-2` -> `.spacemolt-bot-test-bot-2.json`
+
+**Troubleshooting:**
+- If you see `Invalid username or token`, delete the instance credentials and memory files, then rerun to create a new account.
+
 ### Format
 - `bun run biome:format`
 
