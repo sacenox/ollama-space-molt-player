@@ -224,7 +224,7 @@ function isValidEmpire(empire: string): empire is EmpireID {
 function isValidPersonality(
 	personality: string,
 ): personality is PersonalityType {
-	return ["explorer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
+	return ["wonderer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
 		personality,
 	);
 }

@@ -24,8 +24,8 @@ export interface WorldSnapshot {
 
 function getPersonalityGuidance(personality: PersonalityType): string {
 	switch (personality) {
-		case "explorer":
-			return `As an Explorer, you prioritize discovery and knowledge:
+		case "wonderer":
+			return `As a Wonderer, you prioritize discovery and knowledge:
 - After visiting a new system or POI, consider posting about discoveries in forums
 - When encountering unknown mechanics or items, check forums for related threads
 - Regularly use 'forum' command to browse recent discoveries and contribute findings
@@ -227,12 +227,16 @@ export function buildRegistrationPrompt(
 		? `\nPreviously rejected usernames (do NOT reuse): ${failedNames.join(", ")}`
 		: "";
 
-	const personalityDescriptions = Object.entries(PERSONALITY_ARCHETYPES)
+	const shuffledPersonalities = shuffleArray(
+		Object.entries(PERSONALITY_ARCHETYPES),
+	);
+	const personalityDescriptions = shuffledPersonalities
 		.map(
 			([key, info]) =>
 				`  ${info.emoji} ${info.name} (${key}): ${info.description}`,
 		)
 		.join("\n");
+	const personalityKeys = shuffledPersonalities.map(([key]) => key).join("|");
 
 	return `You are creating a SpaceMolt account. Choose a username, empire, and personality archetype.
 The username MUST be unique and original. Do not reuse any prior suggestions.
@@ -242,6 +246,8 @@ PERSONALITY ARCHETYPES:
 Choose a personality that fits your desired playstyle and complements your empire choice.
 ${personalityDescriptions}
 
+IMPORTANT: Each archetype offers a unique and equally valid playstyle. Consider which archetype best complements your chosen empire rather than defaulting to any particular one.
+
 Choose a personality archetype and briefly explain why you chose it (1 sentence).
 Your personality will guide your behavior throughout the game - exploration, combat, trading, and social interactions.
 
@@ -250,7 +256,7 @@ ${helpBlock}
 ${failedBlock}
 
 JSON SCHEMA:
-{"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim","personality":"explorer|merchant|warrior|diplomat|pragmatist","personality_reason":"..."}
+{"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim","personality":"${personalityKeys}","personality_reason":"..."}
 `;
 }
 
@@ -589,4 +595,13 @@ function truncateText(value: string, max: number): string {
 	if (value.length <= max) return value;
 	if (max <= 3) return value.slice(0, max);
 	return `${value.slice(0, max - 3)}...`;
+}
+
+function shuffleArray<T>(array: T[]): T[] {
+	const result = [...array];
+	for (let i = result.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[result[i], result[j]] = [result[j], result[i]];
+	}
+	return result;
 }

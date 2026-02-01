@@ -2,8 +2,13 @@
 
 import { SpaceMoltClient } from "../client/src/client";
 import type {
+	Base,
 	LoggedInPayload,
+	Player,
+	POI,
+	Ship,
 	StateUpdatePayload,
+	System,
 	WelcomePayload,
 } from "../client/src/types";
 import { config } from "./config";
@@ -23,10 +28,17 @@ type Credentials = {
 	token: string;
 };
 
+type WorldSnapshot = {
+	system?: System | null;
+	poi?: POI | null;
+	pois?: POI[];
+	base?: Base | null;
+};
+
 let credentials: Credentials | null = null;
-let cachedPlayer: any = null;
-let cachedShip: any = null;
-const worldSnapshot: any = {};
+let cachedPlayer: Player | null = null;
+let cachedShip: Ship | null = null;
+const worldSnapshot: WorldSnapshot = {};
 
 async function loadCredentials(): Promise<Credentials | null> {
 	try {
@@ -41,7 +53,7 @@ async function loadCredentials(): Promise<Credentials | null> {
 }
 
 function dumpTuiState() {
-	console.log("\n" + "=".repeat(80));
+	console.log(`\n${"=".repeat(80)}`);
 	console.log("TUI STATE DUMP");
 	console.log("=".repeat(80));
 	console.log("\n--- CACHED DATA ---");
@@ -90,7 +102,7 @@ function dumpTuiState() {
 		}),
 	);
 
-	console.log("\n" + "=".repeat(80));
+	console.log(`\n${"=".repeat(80)}`);
 }
 
 client.on<WelcomePayload>("welcome", async (data) => {

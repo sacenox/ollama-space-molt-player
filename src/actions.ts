@@ -10,7 +10,7 @@ export interface ActionDecision {
 export const MAX_GOAL_LENGTH = 120;
 
 export type PersonalityType =
-	| "explorer"
+	| "wonderer"
 	| "merchant"
 	| "warrior"
 	| "diplomat"
@@ -20,8 +20,8 @@ export const PERSONALITY_ARCHETYPES: Record<
 	PersonalityType,
 	{ name: string; emoji: string; description: string }
 > = {
-	explorer: {
-		name: "Explorer",
+	wonderer: {
+		name: "Wonderer",
 		emoji: "🔍",
 		description:
 			"Curious investigator who seeks new systems, shares discoveries, and frequently engages with forums to learn and contribute knowledge.",
@@ -274,7 +274,7 @@ function isValidEmpire(empire: string): empire is EmpireID {
 function isValidPersonality(
 	personality: string,
 ): personality is PersonalityType {
-	return ["explorer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
+	return ["wonderer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
 		personality,
 	);
 }
