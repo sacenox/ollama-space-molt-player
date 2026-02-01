@@ -102,7 +102,17 @@ REQUIRED ARGS:
 
 NOTES:
 - Use only the listed actions.
+- If an action requires args and you do not know valid values, use {"action":"wait"}.
+- Never omit required args or leave them blank.
+- IDs must come from the current state or world snapshot.
 - If unsure, use {"action":"wait"}.
+
+EXAMPLES (valid JSON only):
+{"action":"wait"}
+{"action":"mine"}
+{"action":"travel","args":{"target_poi":"poi_id_here"}}
+{"action":"sell","args":{"item_id":"ore_iron","quantity":10}}
+{"action":"chat","args":{"channel":"local","content":"Hello"}}
 `;
 }
 
@@ -142,16 +152,39 @@ function formatState(state: ClientState): string {
   lines.push(`Docked: ${player.docked_at_base ? "yes" : "no"} | In combat: ${state.inCombat ? "yes" : "no"}`);
   lines.push(`Ship: hull ${ship.hull}/${ship.max_hull} shield ${ship.shield}/${ship.max_shield} fuel ${ship.fuel}/${ship.max_fuel}`);
   lines.push(`Cargo: ${ship.cargo_used}/${ship.cargo_capacity}`);
+  if (ship.cargo?.length) {
+    lines.push(
+      `Cargo items: ${ship.cargo.map((item) => `${item.item_id}(${item.quantity})`).join(", ")}`
+    );
+  } else {
+    lines.push("Cargo items: none");
+  }
   if (base) {
     lines.push(`Base: ${base.name} services=${Object.keys(base.services).filter((k) => (base.services as Record<string, boolean>)[k]).join(",")}`);
   }
+  if (poi?.resources?.length) {
+    lines.push(
+      `Current POI resources: ${poi.resources
+        .map((r) => `${r.resource_id}(${r.richness},${r.remaining})`)
+        .join(", ")}`
+    );
+  } else {
+    lines.push("Current POI resources: none");
+  }
   if (nearby.length > 0) {
     const list = nearby
-      .map((p) => `${p.username ?? p.player_id ?? "unknown"}${p.in_combat ? "(combat)" : ""}`)
-      .join(", ");
-    lines.push(`Nearby: ${list}`);
+      .map((p) => {
+        const name = p.username ?? "unknown";
+        const id = p.player_id ?? "unknown";
+        const ship = p.ship_class ? ` ship=${p.ship_class}` : "";
+        const faction = p.faction_tag ? ` faction=${p.faction_tag}` : "";
+        const combat = p.in_combat ? " combat" : "";
+        return `${name} id=${id}${ship}${faction}${combat}`.trim();
+      })
+      .join(" | ");
+    lines.push(`Nearby targets: ${list}`);
   } else {
-    lines.push("Nearby: none");
+    lines.push("Nearby targets: none");
   }
 
   return lines.join("\n");
@@ -177,6 +210,15 @@ function formatWorldSnapshot(state: ClientState, snapshot?: WorldSnapshot): stri
 
   if (currentPoi) {
     lines.push(`Current POI: ${currentPoi.name} (${currentPoi.id}) type=${currentPoi.type}`);
+    if (currentPoi.resources?.length) {
+      lines.push(
+        `Current POI resources: ${currentPoi.resources
+          .map((r) => `${r.resource_id}(${r.richness},${r.remaining})`)
+          .join(", ")}`
+      );
+    } else {
+      lines.push("Current POI resources: none");
+    }
   } else if (state.player?.current_poi) {
     lines.push(`Current POI: ${state.player.current_poi} (details unavailable)`);
   }
@@ -208,7 +250,7 @@ function formatWorldSnapshot(state: ClientState, snapshot?: WorldSnapshot): stri
 
   if (state.nearby?.length) {
     const targets = state.nearby
-      .map((p) => `${p.username ?? "unknown"} (${p.player_id ?? "unknown"})`)
+      .map((p) => `${p.username ?? "unknown"} id=${p.player_id ?? "unknown"}`)
       .join(", ");
     lines.push(`Nearby players: ${targets}`);
   } else {

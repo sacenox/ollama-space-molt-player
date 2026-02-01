@@ -35,6 +35,7 @@ let includeHelpInPrompt = true;
 let actionLoopRunning = false;
 let worldSnapshot: WorldSnapshot = {};
 let registrationRetries = 0;
+let travelInProgress = false;
 const MAX_REGISTRATION_RETRIES = 3;
 const failedRegistrationNames: string[] = [];
 
@@ -74,11 +75,16 @@ function updateStatus(): void {
     `Hull ${state.ship.hull}/${state.ship.max_hull}`,
     `Shield ${state.ship.shield}/${state.ship.max_shield}`,
     `Fuel ${state.ship.fuel}/${state.ship.max_fuel}`,
+    `Traveling ${travelInProgress ? "Y" : "N"}`,
     `Docked ${state.player.docked_at_base ? "Y" : "N"}`,
     `Tick ${state.currentTick}`,
     location,
   ].join(" | ");
-  tui.setStatus(status);
+  const cargoList = state.ship.cargo?.length
+    ? state.ship.cargo.map((item) => `${item.item_id}(${item.quantity})`).join(",")
+    : "none";
+  const statusWithCargo = `${status} | Cargo ${state.ship.cargo_used}/${state.ship.cargo_capacity} [${cargoList}]`;
+  tui.setStatus(statusWithCargo);
 }
 
 function saveSnapshot(): void {
@@ -131,6 +137,10 @@ async function startActionLoop(): Promise<void> {
 
   while (client.state.authenticated) {
     try {
+      if (travelInProgress) {
+        await sleep(config.tickDelayMs);
+        continue;
+      }
       const recentActions = memory.getRecentActions(config.maxContextActions);
       const recentEvents = memory.getRecentEvents(config.maxContextEvents);
       const prompt = buildActionPrompt({
@@ -148,6 +158,21 @@ async function startActionLoop(): Promise<void> {
         const message = `Invalid action from LLM: ${validation.error ?? "unknown"}`;
         log(message);
         memory.appendEvent("llm_invalid_action", { error: validation.error, raw: result.raw });
+        includeHelpInPrompt = true;
+        await sleep(config.tickDelayMs);
+        continue;
+      }
+
+      if (
+        (validation.action.action === "scan" || validation.action.action === "attack") &&
+        !isNearbyTarget(client.state.nearby, validation.action.args?.target_id)
+      ) {
+        const target = String(validation.action.args?.target_id ?? "").trim();
+        const message = target
+          ? `Invalid action from LLM: Unknown nearby target: ${target}`
+          : "Invalid action from LLM: Missing target_id";
+        log(message);
+        memory.appendEvent("llm_invalid_action", { error: message, raw: result.raw });
         includeHelpInPrompt = true;
         await sleep(config.tickDelayMs);
         continue;
@@ -185,6 +210,21 @@ async function startActionLoop(): Promise<void> {
   }
 
   actionLoopRunning = false;
+}
+
+function isNearbyTarget(
+  nearby: { player_id?: string; username?: string }[] | undefined,
+  targetId: unknown
+): boolean {
+  if (!nearby || nearby.length === 0) return false;
+  const target = String(targetId ?? "").trim();
+  if (!target) return false;
+  const normalized = target.toLowerCase();
+  return nearby.some((player) => {
+    const id = player.player_id ? player.player_id.toLowerCase() : "";
+    const name = player.username ? player.username.toLowerCase() : "";
+    return normalized === id || normalized === name;
+  });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -327,6 +367,15 @@ client.on("ok", (data: Record<string, unknown>) => {
   log(formatOkPayload(data));
   memory.appendEvent("ok", data);
   updateWorldSnapshotFromOk(data);
+  const action = typeof data.action === "string" ? data.action : null;
+  if (action === "travel") {
+    travelInProgress = true;
+  }
+  if (action === "arrived") {
+    travelInProgress = false;
+    client.getSystem();
+    client.getPOI();
+  }
 });
 
 client.on("version_info", (data: Record<string, unknown>) => {
