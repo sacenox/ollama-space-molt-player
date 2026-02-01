@@ -1,7 +1,8 @@
 node_modules/
-.spacemolt-bot-credentials.json
-memory.sqlite
+.spacemolt-bot-*.json
+memory-*.sqlite
 *.sqlite
+*.log
 .env
 .DS_Store
 dist/
