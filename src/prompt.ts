@@ -203,7 +203,6 @@ export function buildActionPrompt(context: PromptContext): string {
 	const stateText = formatState(context.state);
 	const worldText = formatWorldSnapshot(context.state, context.worldSnapshot);
 	const memoryText = formatGroupedMemory(context.recentHistory);
-	const forumFollowUpBlock = formatForumFollowUp(context);
 	const forumContextBlock = formatForumContext(context.recentHistory);
 	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
 	const goalText = context.currentGoal?.trim()
@@ -270,7 +269,6 @@ ${worldText}
  RECENT MEMORY:
  ${memoryText}
 
-${forumFollowUpBlock}
 ${forumContextBlock}
  
  ACTION SCHEMA (JSON ONLY):
@@ -303,7 +301,7 @@ REQUIRED ARGS:
 FORMAT RULES:
 - Use only the listed actions.
 - Goal is required, max ${MAX_GOAL_LENGTH} characters, update every action.
-- Only use info actions (status/system/poi/base/nearby/cargo) when state is missing.
+- Only use info actions (status/system/poi/base/nearby/cargo) when information is missing.
 - IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
 
@@ -658,43 +656,6 @@ function formatGroupedMemory(history: HistoryEntry[]): string {
 	return lines.join("\n");
 }
 
-function formatForumFollowUp(context: PromptContext): string {
-	const status = context.forumFollowUpStatus ?? null;
-	const threadId = context.lastForumThreadId?.trim() ?? "";
-	const title = context.lastForumPostTitle?.trim() ?? "";
-	const category = context.lastForumPostCategory?.trim() ?? "";
-
-	if (!status && !threadId && !title && !category) return "";
-
-	const lines: string[] = ["FORUM FOLLOW-UP:"];
-	if (status === "unread") {
-		lines.push(
-			`- You just created a forum thread. Read it now${threadId ? `: forum_thread ${threadId}` : "."}`,
-		);
-		if (!threadId) {
-			const catText = category ? ` in category "${category}"` : "";
-			const titleText = title ? ` titled "${title}"` : "";
-			lines.push(
-				`- If the thread id is unknown, list forums${catText} and open your thread${titleText}.`,
-			);
-		}
-	} else {
-		const idText = threadId ? ` (id=${threadId})` : "";
-		lines.push(
-			`- You have an active thread to monitor${idText}. Revisit it occasionally when idle, not every tick.`,
-		);
-		if (!threadId && (title || category)) {
-			const catText = category ? ` in category "${category}"` : "";
-			const titleText = title ? ` titled "${title}"` : "";
-			lines.push(
-				`- If the thread id is unknown, list forums${catText} and open your thread${titleText}.`,
-			);
-		}
-	}
-
-	return `\n${lines.join("\n")}\n`;
-}
-
 function formatForumContext(history: HistoryEntry[]): string {
 	if (history.length === 0) return "";
 
@@ -702,7 +663,7 @@ function formatForumContext(history: HistoryEntry[]): string {
 	const createdPosts = findRecentForumPosts(history, 3);
 	const repliedThreads = findRecentRepliedThreads(history, 3);
 
-	const lines: string[] = ["FORUM CONTEXT:"];
+	const lines: string[] = ["FORUM INFORMATION:"];
 	lines.push(`- Last forum check: ${formatForumCheckLine(lastForumCheck)}`);
 	lines.push("- Created posts (last 3):");
 	if (createdPosts.length === 0) {
