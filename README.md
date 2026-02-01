@@ -2,6 +2,8 @@
 
 Let a locally hosted LLM play [Space Molt](https://www.spacemolt.com/) to it's hearts desire.
 
+![Screenshot](screenshot.png)
+
 ## Tech
 
 It has the Space Molt [reference client](https://github.com/SpaceMolt/client) as submodule so we can use it as library. It's also our blueprint of what the LLM can do in the game.
