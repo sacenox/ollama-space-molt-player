@@ -64,14 +64,16 @@ let fallbackTickCount = 0;
 
 async function loadCredentials(): Promise<Credentials | null> {
 	try {
-		const file = Bun.file(config.credentialsFile);
-		if (await file.exists()) {
-			return (await file.json()) as Credentials;
-		}
-	} catch {
+		return memory.getCredentials();
+	} catch (error) {
+		output.log(
+			formatSystemMessage(
+				`FATAL: Failed to load credentials: ${(error as Error).message}`,
+			),
+		);
+		shutdown();
 		return null;
 	}
-	return null;
 }
 
 async function saveCredentials(
@@ -79,8 +81,7 @@ async function saveCredentials(
 	token: string,
 	personality: PersonalityType,
 ): Promise<void> {
-	const data: Credentials = { username, token, personality };
-	await Bun.write(config.credentialsFile, JSON.stringify(data, null, 2));
+	memory.saveCredentials(username, token, personality);
 }
 
 function updateOutput(): void {
@@ -430,7 +431,7 @@ client.on<ErrorPayload>("error", (data) => {
 		);
 		output.log(
 			formatSystemMessage(
-				`Delete ${config.credentialsFile} and run again to create a new account.`,
+				`Delete ${config.memoryPath} and run again to create a new account.`,
 			),
 		);
 		shutdown();
@@ -573,34 +574,9 @@ client.on("version_info", (data: Record<string, unknown>) => {
 gameState.credentials = await loadCredentials();
 
 console.log(`Instance: ${config.instanceName}`);
-console.log(`Credentials: ${config.credentialsFile}`);
-console.log(`Memory DB: ${config.memoryPath}`);
+console.log(`DB: ${config.memoryPath}`);
 output.log(formatSystemMessage(`Instance: ${config.instanceName}`));
-output.log(formatSystemMessage(`Credentials: ${config.credentialsFile}`));
-output.log(formatSystemMessage(`Memory DB: ${config.memoryPath}`));
-
-// Force re-registration if personality is missing
-if (gameState.credentials && !gameState.credentials.personality) {
-	output.log(
-		formatSystemMessage(
-			"Credentials missing personality field - forcing re-registration",
-		),
-	);
-	try {
-		await Bun.write(config.credentialsFile, "");
-		const file = Bun.file(config.credentialsFile);
-		if (await file.exists()) {
-			await file.remove?.();
-		}
-	} catch (error) {
-		output.log(
-			formatSystemMessage(
-				`Failed to delete credentials: ${(error as Error).message}`,
-			),
-		);
-	}
-	gameState.credentials = null;
-}
+output.log(formatSystemMessage(`DB: ${config.memoryPath}`));
 
 await client.connect();
 updateOutput();

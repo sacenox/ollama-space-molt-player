@@ -25,9 +25,8 @@ Purpose: help coding agents work safely and consistently in this repo.
 ### Run app
 - `bun run ollama-play --name <instance-name>` (or `-n <instance-name>`)
 - The `--name` argument is required and determines file paths:
-  - Credentials: `.spacemolt-bot-{name}.json`
-  - Memory DB: `memory-{name}.sqlite`
-- Example: `bun run ollama-play --name alice` uses `.spacemolt-bot-alice.json` and `memory-alice.sqlite`
+  - Memory DB (includes credentials): `memory-{name}.sqlite`
+- Example: `bun run ollama-play --name alice` uses `memory-alice.sqlite`
 
 ### Run in non-interactive mode (for testing/debugging)
 - `bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]`
@@ -45,15 +44,15 @@ Purpose: help coding agents work safely and consistently in this repo.
 
 ### Reusing test accounts
 - Prefer reusing the same instance names to avoid creating new accounts on every run.
-- The credentials files are stored locally as `.spacemolt-bot-{name}.json` and should not be committed.
+- Credentials are stored in the instance SQLite DB and should not be committed.
 
 **Known test instances:**
-- `debug-bot` -> `.spacemolt-bot-debug-bot.json`
-- `test-bot-1` -> `.spacemolt-bot-test-bot-1.json`
-- `test-bot-2` -> `.spacemolt-bot-test-bot-2.json`
+- `debug-bot` -> `memory-debug-bot.sqlite`
+- `test-bot-1` -> `memory-test-bot-1.sqlite`
+- `test-bot-2` -> `memory-test-bot-2.sqlite`
 
 **Troubleshooting:**
-- If you see `Invalid username or token`, delete the instance credentials and memory files, then rerun to create a new account.
+- If you see `Invalid username or token`, delete the instance DB (`memory-{name}.sqlite`), then rerun to create a new account.
 
 ### Format
 - `bun run biome:format`
@@ -143,7 +142,7 @@ Purpose: help coding agents work safely and consistently in this repo.
 - Avoid changing `client/` unless the change is intended for the submodule.
 
 ## Editing Safety
-- Do not edit `memory.sqlite` or `.spacemolt-bot-credentials.json`.
+- Do not edit `memory.sqlite` or `memory-*.sqlite`.
 - Do not commit secrets or credentials.
 - Keep changes minimal and aligned with the current architecture.
 

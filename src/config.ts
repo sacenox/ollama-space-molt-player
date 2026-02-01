@@ -63,7 +63,6 @@ export const config = {
 	spacemoltUrl: process.env.SPACEMOLT_URL ?? "wss://game.spacemolt.com/ws",
 	debug: process.env.DEBUG === "true",
 	memoryPath: process.env.MEMORY_DB ?? `memory-${instanceName}.sqlite`,
-	credentialsFile: `.spacemolt-bot-${instanceName}.json`,
 	uiLogPath: `ui-${instanceName}.log`,
 	debugLogPath: `debug-${instanceName}.log`,
 	tickDelayMs: 11000,

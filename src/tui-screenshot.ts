@@ -12,10 +12,12 @@ import type {
 	WelcomePayload,
 } from "../client/src/types";
 import { config } from "./config";
+import { MemoryStore } from "./memory";
 import { renderLocationPanel } from "./tui/panels/location";
 import { renderPlayerShipPanel } from "./tui/panels/player-ship";
 import { renderTacticalPanel } from "./tui/panels/tactical";
 import { renderWorldInfoPanel } from "./tui/panels/world-info";
+import type { Credentials } from "./types";
 
 const client = new SpaceMoltClient({
 	url: config.spacemoltUrl,
@@ -23,10 +25,7 @@ const client = new SpaceMoltClient({
 	reconnect: false,
 });
 
-type Credentials = {
-	username: string;
-	token: string;
-};
+const memory = new MemoryStore(config.memoryPath);
 
 type WorldSnapshot = {
 	system?: System | null;
@@ -40,16 +39,13 @@ let cachedPlayer: Player | null = null;
 let cachedShip: Ship | null = null;
 const worldSnapshot: WorldSnapshot = {};
 
-async function loadCredentials(): Promise<Credentials | null> {
+function loadCredentials(): Credentials | null {
 	try {
-		const file = Bun.file(config.credentialsFile);
-		if (await file.exists()) {
-			return (await file.json()) as Credentials;
-		}
-	} catch {
-		return null;
+		return memory.getCredentials();
+	} catch (error) {
+		console.log(`Failed to load credentials: ${(error as Error).message}`);
+		process.exit(1);
 	}
-	return null;
 }
 
 function dumpTuiState() {
@@ -162,10 +158,10 @@ client.on("ok", (data: Record<string, unknown>) => {
 	}
 });
 
-credentials = await loadCredentials();
+credentials = loadCredentials();
 
 if (!credentials) {
-	console.log("No credentials file found. Please run the main app first.");
+	console.log("No credentials found in DB. Please run the main app first.");
 	process.exit(1);
 }
 

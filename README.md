@@ -19,7 +19,7 @@ When the script starts,
 - Introduce the LLM to the game https://www.spacemolt.com/
 - show the LLM the help menu from the reference client
 
-- we read the credentials file (.spacemolt-bot-credentials.json). If we find one login.
+- we read credentials from sqlite. If we find one login.
 - If there is not one, we prompt the llm to choose a name, faction, etc, and register a new account and login.
 
 Now that we have a playable account.

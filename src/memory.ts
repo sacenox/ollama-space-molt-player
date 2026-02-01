@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import type { Credentials, PersonalityType } from "./types";
 
 export interface Snapshot {
 	tick: number;
@@ -83,7 +84,42 @@ export class MemoryStore {
         base TEXT,
         nearby TEXT
       );
+      CREATE TABLE IF NOT EXISTS credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        username TEXT NOT NULL,
+        token TEXT NOT NULL,
+        personality TEXT NOT NULL
+      );
     `);
+	}
+
+	getCredentials(): Credentials | null {
+		const row = this.db
+			.query(
+				"SELECT username, token, personality FROM credentials ORDER BY id DESC LIMIT 1",
+			)
+			.get() as
+			| { username?: string; token?: string; personality?: string }
+			| undefined;
+		if (!row || !row.username || !row.token || !row.personality) return null;
+		return {
+			username: row.username,
+			token: row.token,
+			personality: row.personality as PersonalityType,
+		};
+	}
+
+	saveCredentials(
+		username: string,
+		token: string,
+		personality: PersonalityType,
+	): void {
+		this.db
+			.query(
+				"INSERT INTO credentials (ts, username, token, personality) VALUES (?, ?, ?, ?)",
+			)
+			.run(nowIso(), username, token, personality);
 	}
 
 	appendAction(
