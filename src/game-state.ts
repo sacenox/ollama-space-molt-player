@@ -13,7 +13,7 @@ export class GameState {
 	jumpInProgress = false;
 	lastJumpTarget: string | null = null;
 
-	currentGoal: string | null = null;
+	currentMission: string | null = null;
 
 	// Tracking for changes
 	lastSystemId: string | null = null;

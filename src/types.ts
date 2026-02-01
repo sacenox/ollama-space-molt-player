@@ -14,7 +14,7 @@ export type SpeechStyleType = "mythic" | "punny" | "gritty" | "scholarly";
 export interface ActionDecision {
 	action: string;
 	args?: Record<string, unknown>;
-	goal?: string;
+	mission?: string;
 }
 
 export interface Credentials {

@@ -26,7 +26,7 @@ import {
 import { runRegistrationFlow } from "./registration";
 import {
 	formatAiAction,
-	formatAiGoal,
+	formatAiMission,
 	formatAiThinking,
 	formatChatMessage,
 	formatError,
@@ -122,7 +122,7 @@ function updateOutput(): void {
 		travelTarget: gameState.lastTravelTarget,
 		jumping: gameState.jumpInProgress,
 		jumpTarget: gameState.lastJumpTarget,
-		goal: gameState.currentGoal,
+		mission: gameState.currentMission,
 		inCombat: gameState.inCombat,
 		context: gameState.tuiContext,
 	});
@@ -319,7 +319,7 @@ async function startActionLoop(): Promise<void> {
 				recentHistory,
 				memorySummary,
 				lastActionResult,
-				currentGoal: gameState.currentGoal,
+				currentMission: gameState.currentMission,
 				empire: client.state.player?.empire,
 				alignment: gameState.credentials?.alignment,
 				personality: gameState.credentials?.personality,
@@ -372,7 +372,7 @@ async function startActionLoop(): Promise<void> {
 			}
 
 			const actionName = validation.action.action;
-			const goal = validation.action.goal ?? null;
+			const mission = validation.action.mission ?? null;
 			const actionStamp = getActionStamp();
 			if (actionName === "forum_post") {
 				const title = String(validation.action.args?.title ?? "").trim();
@@ -389,10 +389,10 @@ async function startActionLoop(): Promise<void> {
 					gameState.lastForumThreadReadAt = actionStamp;
 				}
 			}
-			if (client.state.player?.username && goal) {
-				gameState.currentGoal = goal;
-				memory.setGoal(client.state.player.username, goal);
-				output.log(formatAiGoal(goal));
+			if (client.state.player?.username && mission) {
+				gameState.currentMission = mission;
+				memory.setMission(client.state.player.username, mission);
+				output.log(formatAiMission(mission));
 				updateOutput();
 			}
 			if (gameState.pendingActionId !== null) {
@@ -801,7 +801,7 @@ function initializeSessionFromLoggedIn(data: LoggedInPayload): void {
 	}
 
 	gameState.lastDocked = Boolean(data.player.docked_at_base);
-	gameState.currentGoal = memory.getLatestGoal(data.player.username);
+	gameState.currentMission = memory.getLatestMission(data.player.username);
 
 	// Fetch base info if docked
 	if (data.player.docked_at_base) {

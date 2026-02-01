@@ -294,8 +294,8 @@ export function formatAiAction(
 	return formatWithTimestamp(msg, "ai");
 }
 
-export function formatAiGoal(goal: string): FormattedMessage {
-	const msg = applyColor(`[AI Goal] ${goal}`, COLORS.MSG_AI);
+export function formatAiMission(mission: string): FormattedMessage {
+	const msg = applyColor(`[AI Mission] ${mission}`, COLORS.MSG_AI);
 	return formatWithTimestamp(msg, "ai");
 }
 

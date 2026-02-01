@@ -54,7 +54,7 @@ export interface TuiUpdateData {
 	travelTarget?: string | null;
 	jumping?: boolean;
 	jumpTarget?: string | null;
-	goal?: string | null;
+	mission?: string | null;
 	inCombat?: boolean;
 	combatTarget?: {
 		id: string;
@@ -245,7 +245,7 @@ export class Tui {
 			this.state.travelTarget = data.travelTarget;
 		if (data.jumping !== undefined) this.state.jumping = data.jumping;
 		if (data.jumpTarget !== undefined) this.state.jumpTarget = data.jumpTarget;
-		if (data.goal !== undefined) this.state.goal = data.goal;
+		if (data.mission !== undefined) this.state.mission = data.mission;
 		if (data.inCombat !== undefined) this.state.inCombat = data.inCombat;
 		if (data.combatTarget !== undefined)
 			this.state.combatTarget = data.combatTarget;
@@ -338,9 +338,9 @@ export class Tui {
 			parts.push(`At ${this.state.poi.name}`);
 		}
 
-		// Goal
-		if (this.state.goal) {
-			parts.push(`Goal: ${this.state.goal}`);
+		// Mission
+		if (this.state.mission) {
+			parts.push(`Mission: ${this.state.mission}`);
 		}
 
 		// Tick

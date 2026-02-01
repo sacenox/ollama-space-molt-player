@@ -91,7 +91,7 @@ export class FileLoggerOutput implements OutputInterface {
 			this.state.travelTarget = data.travelTarget;
 		if (data.jumping !== undefined) this.state.jumping = data.jumping;
 		if (data.jumpTarget !== undefined) this.state.jumpTarget = data.jumpTarget;
-		if (data.goal !== undefined) this.state.goal = data.goal;
+		if (data.mission !== undefined) this.state.mission = data.mission;
 		if (data.inCombat !== undefined) this.state.inCombat = data.inCombat;
 		if (data.combatTarget !== undefined)
 			this.state.combatTarget = data.combatTarget;

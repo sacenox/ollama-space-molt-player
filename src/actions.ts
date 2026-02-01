@@ -1,10 +1,10 @@
 import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
-import { ACTION_DEFINITIONS, MAX_GOAL_LENGTH } from "./constants";
+import { ACTION_DEFINITIONS, MAX_MISSION_LENGTH } from "./constants";
 import type { ActionDecision } from "./types";
 import { isValidEmpire } from "./utils";
 
-export { MAX_GOAL_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
+export { MAX_MISSION_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
 export type { ActionDecision, PersonalityType } from "./types";
 
 export function validateAction(decision: unknown): {
@@ -16,12 +16,15 @@ export function validateAction(decision: unknown): {
 		return { ok: false, error: "Action is not an object" };
 	}
 
-	const goal = String((decision as ActionDecision).goal ?? "").trim();
-	if (!goal) {
-		return { ok: false, error: "Missing goal" };
+	const mission = String((decision as ActionDecision).mission ?? "").trim();
+	if (!mission) {
+		return { ok: false, error: "Missing mission" };
 	}
-	if (goal.length > MAX_GOAL_LENGTH) {
-		return { ok: false, error: `Goal exceeds ${MAX_GOAL_LENGTH} characters` };
+	if (mission.length > MAX_MISSION_LENGTH) {
+		return {
+			ok: false,
+			error: `Mission exceeds ${MAX_MISSION_LENGTH} characters`,
+		};
 	}
 
 	const action = String(
@@ -221,7 +224,7 @@ export function validateAction(decision: unknown): {
 		}
 	}
 
-	return { ok: true, action: { action, args, goal } };
+	return { ok: true, action: { action, args, mission } };
 }
 
 export function dispatchAction(

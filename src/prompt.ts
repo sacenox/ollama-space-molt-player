@@ -2,7 +2,7 @@ import type { ClientState } from "../client/src/client";
 import type { Base, EmpireID, POI, System } from "../client/src/types";
 import {
 	ALIGNMENT_DESCRIPTIONS,
-	MAX_GOAL_LENGTH,
+	MAX_MISSION_LENGTH,
 	PERSONALITY_ARCHETYPES,
 	SPEECH_STYLE_DESCRIPTIONS,
 } from "./constants";
@@ -14,7 +14,7 @@ export interface PromptContext {
 	worldSnapshot?: WorldSnapshot;
 	recentHistory: HistoryEntry[];
 	memorySummary?: string | null;
-	currentGoal: string | null;
+	currentMission: string | null;
 	empire?: EmpireID;
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
@@ -212,8 +212,8 @@ export function buildActionPrompt(context: PromptContext): string {
 		: "No actions yet.";
 	const forumContextBlock = formatForumContext(context.recentHistory);
 	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
-	const goalText = context.currentGoal?.trim()
-		? context.currentGoal.trim()
+	const missionText = context.currentMission?.trim()
+		? context.currentMission.trim()
 		: "(none yet)";
 	const empire = context.empire ?? "solarian";
 	const alignment = context.alignment ?? "neutral";
@@ -225,8 +225,8 @@ export function buildActionPrompt(context: PromptContext): string {
 	const warningBlock = context.repetitionWarning
 		? `
 REPETITION DETECTED: You performed "${context.repetitionWarning.action}" ${context.repetitionWarning.count} times in a row without progress.
-STOP this action immediately. Choose something DIFFERENT or set a new goal.
-If your goal is blocked or impossible, abandon it now.
+STOP this action immediately. Choose something DIFFERENT or set a new mission.
+If your mission is blocked or impossible, abandon it now.
 `
 		: "";
 	const strandedBlock = isStranded(context.state, context.worldSnapshot)
@@ -234,7 +234,7 @@ If your goal is blocked or impossible, abandon it now.
 STRANDED: Fuel is 0 and there is no base at this POI.
 Travel/jump/refuel/dock will FAIL. Do NOT repeat those actions.
 Ask for help or wait. Recommended actions: say, faction, msg, forum, forum_post, forum_reply, help, wait.
-Example: {"goal":"Request rescue","action":"faction","args":{"content":"Stranded with 0 fuel at current system/POI. Need assistance."}}
+Example: {"mission":"Request rescue from faction members","action":"faction","args":{"content":"Stranded with 0 fuel at current system/POI. Need assistance."}}
 `
 		: "";
 
@@ -244,12 +244,33 @@ Agents explore, trade, battle, and build empires in a living universe with emerg
 The game emphasizes real-time AI fleet combat, ongoing discoveries of new systems, and shifting trade routes and alliances.
 
 HOW TO PLAY:
-Use all of the provided information to consider your goal. Then decide how to act next.
+Use all of the provided information to consider your mission. Then decide how to act next.
 Respond ONLY with a single JSON object. No extra text.
 ${helpBlock}
 
-YOUR GOAL:
-${goalText}
+YOUR MISSION:
+${missionText}
+
+MISSION GUIDELINES:
+A mission is a multi-step objective that guides several actions over multiple ticks.
+It should describe WHAT you're working toward and WHY, not just the next immediate action.
+
+STRUCTURE YOUR MISSION:
+Think: "I'm doing [short-term activities] to eventually [achieve long-term goal]"
+- Good: Describes the purpose behind multiple actions
+- Bad: Just names the next single action you'll take
+
+MISSION vs ACTION:
+- Mission: Multi-step purpose that persists (example: "gathering resources to fund my next venture")
+- Action: Single step you're about to take (example: "dock")
+
+UPDATE YOUR MISSION when:
+- Mission completed (achieved your objective)
+- Mission blocked (impossible to continue, need different approach)
+- Better opportunity arises (new priority emerges)
+- Current mission no longer aligns with your situation
+
+Keep your mission consistent across actions unless circumstances change significantly.
 
 YOUR EMPIRE: ${getEmpireDescription(empire)}
 
@@ -282,7 +303,7 @@ ${lastActionText}
 ${forumContextBlock}
  
  ACTION SCHEMA (JSON ONLY):
-  {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
+  {"mission":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -310,14 +331,14 @@ REQUIRED ARGS:
 
 FORMAT RULES:
 - Use only the listed actions.
-- Goal is required, max ${MAX_GOAL_LENGTH} characters, update every action.
+- Mission is required, max ${MAX_MISSION_LENGTH} characters. Keep it consistent unless circumstances change.
 - Only use info actions (status/system/poi/base/nearby/cargo) when information is missing.
 - IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
 
 ERROR RECOVERY:
 - If an action FAILED in recent memory, do NOT retry it with the same arguments.
-- Change your approach: try a different action, move to a different location, or update your goal.
+- Change your approach: try a different action, move to a different location, or update your mission.
 
  INTERACTION GUIDELINES:
  - Stay in character with your personality archetype and empire

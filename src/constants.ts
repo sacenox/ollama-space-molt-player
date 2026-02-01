@@ -5,7 +5,7 @@ import type {
 	SpeechStyleType,
 } from "./types";
 
-export const MAX_GOAL_LENGTH = 120;
+export const MAX_MISSION_LENGTH = 120;
 
 export interface AlignmentInfo {
 	name: string;

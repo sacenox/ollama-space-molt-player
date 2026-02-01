@@ -14,9 +14,9 @@ const DEFAULT_COUNT = 5;
 const DEFAULT_PREFIX = "swarm";
 const DEFAULT_RESTART_DELAY_MS = 10000;
 const SWARM_LOG_PATH = "swarm.log";
-const GOAL_TICK_DELAY_MS = 11000;
-const GOAL_EVERY_TICKS = 3;
-const GOAL_INTERVAL_MS = GOAL_TICK_DELAY_MS * GOAL_EVERY_TICKS;
+const MISSION_TICK_DELAY_MS = 11000;
+const MISSION_EVERY_TICKS = 3;
+const MISSION_INTERVAL_MS = MISSION_TICK_DELAY_MS * MISSION_EVERY_TICKS;
 
 const { values } = parseArgs({
 	args: process.argv.slice(2),
@@ -174,9 +174,9 @@ const swarmConfig: SwarmConfig = {
 
 const children = new Map<string, ReturnType<typeof spawn>>();
 const restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const goalDbs = new Map<string, Database>();
+const missionDbs = new Map<string, Database>();
 let swarmMembers: string[] = [];
-let goalTimer: ReturnType<typeof setInterval> | null = null;
+let missionTimer: ReturnType<typeof setInterval> | null = null;
 let stopping = false;
 
 function buildInstanceName(
@@ -224,51 +224,51 @@ function getMemoryPath(instanceName: string): string {
 	return `memory-${instanceName}.sqlite`;
 }
 
-function getGoalDb(instanceName: string): Database | null {
-	const existing = goalDbs.get(instanceName);
+function getMissionDb(instanceName: string): Database | null {
+	const existing = missionDbs.get(instanceName);
 	if (existing) return existing;
 	const memoryPath = getMemoryPath(instanceName);
 	if (!existsSync(memoryPath)) return null;
 	const db = new Database(memoryPath);
-	goalDbs.set(instanceName, db);
+	missionDbs.set(instanceName, db);
 	return db;
 }
 
-function readLatestGoal(
+function readLatestMission(
 	instanceName: string,
 ):
-	| { status: "ok"; goal: string | null }
+	| { status: "ok"; mission: string | null }
 	| { status: "missing" }
 	| { status: "error"; message: string } {
-	const db = getGoalDb(instanceName);
+	const db = getMissionDb(instanceName);
 	if (!db) return { status: "missing" };
 	try {
 		const row = db
-			.query("SELECT goal FROM llm_goals ORDER BY id DESC LIMIT 1")
-			.get() as { goal?: string } | undefined;
-		return { status: "ok", goal: row?.goal ?? null };
+			.query("SELECT mission FROM llm_missions ORDER BY id DESC LIMIT 1")
+			.get() as { mission?: string } | undefined;
+		return { status: "ok", mission: row?.mission ?? null };
 	} catch (error) {
 		return { status: "error", message: (error as Error).message };
 	}
 }
 
-function logGoalsOnce(): void {
+function logMissionsOnce(): void {
 	if (stopping) return;
 	for (const name of swarmMembers) {
-		const result = readLatestGoal(name);
+		const result = readLatestMission(name);
 		if (result.status === "missing") {
-			logSwarm(`goal ${name}: <db missing>`);
+			logSwarm(`mission ${name}: <db missing>`);
 			continue;
 		}
 		if (result.status === "error") {
-			logSwarm(`goal ${name}: error (${result.message})`);
+			logSwarm(`mission ${name}: error (${result.message})`);
 			continue;
 		}
-		if (result.goal) {
-			logSwarm(`goal ${name}: ${result.goal}`);
+		if (result.mission) {
+			logSwarm(`mission ${name}: ${result.mission}`);
 			continue;
 		}
-		logSwarm(`goal ${name}: <none yet>`);
+		logSwarm(`mission ${name}: <none yet>`);
 	}
 }
 
@@ -309,22 +309,24 @@ function shutdown(reason: string): void {
 	if (stopping) return;
 	stopping = true;
 	logSwarm(`shutdown ${reason}`);
-	if (goalTimer) {
-		clearInterval(goalTimer);
-		goalTimer = null;
+	if (missionTimer) {
+		clearInterval(missionTimer);
+		missionTimer = null;
 	}
 	for (const timer of restartTimers.values()) {
 		clearTimeout(timer);
 	}
 	restartTimers.clear();
-	for (const [name, db] of goalDbs.entries()) {
+	for (const [name, db] of missionDbs.entries()) {
 		try {
 			db.close();
 		} catch (error) {
-			logSwarm(`failed to close goal db ${name} (${(error as Error).message})`);
+			logSwarm(
+				`failed to close mission db ${name} (${(error as Error).message})`,
+			);
 		}
 	}
-	goalDbs.clear();
+	missionDbs.clear();
 	for (const [name, child] of children.entries()) {
 		try {
 			child.kill("SIGTERM");
@@ -351,9 +353,11 @@ function startSwarm(): void {
 	for (const name of swarmMembers) {
 		spawnBot(name);
 	}
-	if (!goalTimer) {
-		goalTimer = setInterval(logGoalsOnce, GOAL_INTERVAL_MS);
-		logSwarm(`goals every ${GOAL_EVERY_TICKS} ticks (${GOAL_INTERVAL_MS}ms)`);
+	if (!missionTimer) {
+		missionTimer = setInterval(logMissionsOnce, MISSION_INTERVAL_MS);
+		logSwarm(
+			`missions every ${MISSION_EVERY_TICKS} ticks (${MISSION_INTERVAL_MS}ms)`,
+		);
 	}
 }
 

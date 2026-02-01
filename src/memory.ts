@@ -63,6 +63,9 @@ export class MemoryStore {
 	}
 
 	private init(): void {
+		// Run migrations BEFORE creating tables to handle renames
+		this.migrate();
+
 		this.db.exec(`
       CREATE TABLE IF NOT EXISTS actions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,11 +89,11 @@ export class MemoryStore {
         type TEXT NOT NULL,
         payload TEXT
       );
-      CREATE TABLE IF NOT EXISTS llm_goals (
+      CREATE TABLE IF NOT EXISTS llm_missions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT NOT NULL,
         username TEXT NOT NULL,
-        goal TEXT NOT NULL
+        mission TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS state_snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +116,6 @@ export class MemoryStore {
         speech_style TEXT NOT NULL DEFAULT 'mythic'
       );
     `);
-		this.migrate();
 	}
 
 	private migrate(): void {
@@ -132,6 +134,29 @@ export class MemoryStore {
 			this.db.exec(
 				"ALTER TABLE credentials ADD COLUMN speech_style TEXT NOT NULL DEFAULT 'mythic'",
 			);
+		}
+
+		// Migrate llm_goals to llm_missions
+		const tables = this.db
+			.query("SELECT name FROM sqlite_master WHERE type='table'")
+			.all() as { name: string }[];
+		const hasGoalsTable = tables.some((t) => t.name === "llm_goals");
+		const hasMissionsTable = tables.some((t) => t.name === "llm_missions");
+
+		if (hasGoalsTable && !hasMissionsTable) {
+			// Rename table from llm_goals to llm_missions
+			this.db.exec("ALTER TABLE llm_goals RENAME TO llm_missions");
+		}
+
+		// If llm_missions exists, check if it needs the column renamed
+		if (hasMissionsTable || hasGoalsTable) {
+			const missionColumns = this.db
+				.query("PRAGMA table_info(llm_missions)")
+				.all() as { name: string }[];
+			const hasGoalColumn = missionColumns.some((col) => col.name === "goal");
+			if (hasGoalColumn) {
+				this.db.exec("ALTER TABLE llm_missions RENAME COLUMN goal TO mission");
+			}
 		}
 	}
 
@@ -247,20 +272,22 @@ export class MemoryStore {
 			);
 	}
 
-	setGoal(username: string, goal: string): void {
+	setMission(username: string, mission: string): void {
 		this.db
-			.query("INSERT INTO llm_goals (ts, username, goal) VALUES (?, ?, ?)")
-			.run(nowIso(), username, goal);
+			.query(
+				"INSERT INTO llm_missions (ts, username, mission) VALUES (?, ?, ?)",
+			)
+			.run(nowIso(), username, mission);
 	}
 
-	getLatestGoal(username: string): string | null {
+	getLatestMission(username: string): string | null {
 		const row = this.db
 			.query(
-				"SELECT goal FROM llm_goals WHERE username = ? ORDER BY id DESC LIMIT 1",
+				"SELECT mission FROM llm_missions WHERE username = ? ORDER BY id DESC LIMIT 1",
 			)
-			.get(username) as { goal?: string } | undefined;
-		if (!row || !row.goal) return null;
-		return row.goal;
+			.get(username) as { mission?: string } | undefined;
+		if (!row || !row.mission) return null;
+		return row.mission;
 	}
 
 	getRecentActions(limit: number): StoredAction[] {
