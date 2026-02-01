@@ -190,6 +190,9 @@ function resolveTerminal(): string | undefined {
 
 function colorize(message: string): string {
 	const lower = message.toLowerCase();
+	if (lower.startsWith("[thinking]")) {
+		return `{gray-fg}${message}{/gray-fg}`;
+	}
 	if (
 		lower.startsWith("error") ||
 		lower.includes("error") ||

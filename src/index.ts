@@ -11,7 +11,12 @@ import type {
 	StateUpdatePayload,
 	WelcomePayload,
 } from "../client/src/types";
-import { dispatchAction, validateAction } from "./actions";
+import {
+	dispatchAction,
+	PERSONALITY_ARCHETYPES,
+	type PersonalityType,
+	validateAction,
+} from "./actions";
 import { config } from "./config";
 import { MemoryStore } from "./memory";
 import { OllamaAgent, OllamaTimeoutError } from "./ollama";
@@ -22,14 +27,25 @@ import {
 } from "./prompt";
 import { Tui } from "./tui";
 
-type Credentials = { username: string; token: string };
-type RegistrationChoice = { username: string; empire: EmpireID };
+type Credentials = {
+	username: string;
+	token: string;
+	personality: PersonalityType;
+};
+type RegistrationChoice = {
+	username: string;
+	empire: EmpireID;
+	personality: PersonalityType;
+	personality_reason?: string;
+};
 
 const memory = new MemoryStore(config.memoryPath);
 const ollama = new OllamaAgent(
 	config.ollamaUrl,
 	config.ollamaModel,
 	config.ollamaTimeoutMs,
+	config.ollamaTemperature,
+	config.ollamaThinking,
 );
 const tui = new Tui(config.debug);
 
@@ -46,7 +62,12 @@ const worldSnapshot: WorldSnapshot = {};
 let registrationRetries = 0;
 let travelInProgress = false;
 let lastTravelTarget: string | null = null;
+let jumpInProgress = false;
+let lastJumpTarget: string | null = null;
 let currentGoal: string | null = null;
+let lastSystemId: string | null = null;
+let lastPoiId: string | null = null;
+let lastDocked = false;
 const MAX_REGISTRATION_RETRIES = 3;
 const failedRegistrationNames: string[] = [];
 
@@ -62,8 +83,12 @@ async function loadCredentials(): Promise<Credentials | null> {
 	return null;
 }
 
-async function saveCredentials(username: string, token: string): Promise<void> {
-	const data: Credentials = { username, token };
+async function saveCredentials(
+	username: string,
+	token: string,
+	personality: PersonalityType,
+): Promise<void> {
+	const data: Credentials = { username, token, personality };
 	await Bun.write(config.credentialsFile, JSON.stringify(data, null, 2));
 }
 
@@ -83,6 +108,8 @@ function updateStatus(): void {
 		worldSnapshot,
 		travelInProgress,
 		lastTravelTarget,
+		jumpInProgress,
+		lastJumpTarget,
 		currentGoal,
 	);
 	const sidebarText = formatSidebar(
@@ -90,6 +117,9 @@ function updateStatus(): void {
 		worldSnapshot,
 		travelInProgress,
 		lastTravelTarget,
+		jumpInProgress,
+		lastJumpTarget,
+		credentials?.personality,
 	);
 	tui.setStatus(statusText);
 	tui.setSidebar(sidebarText);
@@ -116,13 +146,37 @@ async function runRegistrationFlow(): Promise<void> {
 			const prompt = buildRegistrationPrompt(true, failedRegistrationNames);
 			tui.setPrompt(prompt);
 			const result = await ollama.generateJson<RegistrationChoice>(prompt);
+			if (result.thinking) {
+				log(
+					`[Thinking] ${result.thinking.slice(0, 200)}${result.thinking.length > 200 ? "..." : ""}`,
+				);
+			}
 			const username = String(result.json.username ?? "").trim();
 			const empire = String(result.json.empire ?? "").trim() as EmpireID;
-			if (!username || !isValidEmpire(empire)) {
+			const personality = String(
+				result.json.personality ?? "",
+			).trim() as PersonalityType;
+			const personalityReason = result.json.personality_reason
+				? String(result.json.personality_reason).trim()
+				: undefined;
+			if (
+				!username ||
+				!isValidEmpire(empire) ||
+				!isValidPersonality(personality)
+			) {
 				throw new Error("Invalid registration response");
 			}
-			pendingRegistration = { username, empire };
+			pendingRegistration = {
+				username,
+				empire,
+				personality,
+				personality_reason: personalityReason,
+			};
+			const personalityInfo = PERSONALITY_ARCHETYPES[personality];
 			log(`Registering new account: ${username} (${empire})`);
+			log(
+				`Chosen personality: ${personalityInfo.emoji} ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
+			);
 			client.register(username, empire);
 			return;
 		} catch (error) {
@@ -131,8 +185,12 @@ async function runRegistrationFlow(): Promise<void> {
 	}
 
 	const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
-	pendingRegistration = { username: fallback, empire: "solarian" };
-	log(`Falling back to account: ${fallback} (solarian)`);
+	pendingRegistration = {
+		username: fallback,
+		empire: "solarian",
+		personality: "pragmatist",
+	};
+	log(`Falling back to account: ${fallback} (solarian, pragmatist)`);
 	client.register(fallback, "solarian");
 }
 
@@ -142,13 +200,70 @@ function isValidEmpire(empire: string): empire is EmpireID {
 	);
 }
 
+function isValidPersonality(
+	personality: string,
+): personality is PersonalityType {
+	return ["explorer", "merchant", "warrior", "diplomat", "pragmatist"].includes(
+		personality,
+	);
+}
+
+function refreshSnapshotForLocation(player: {
+	current_system?: string;
+	current_poi?: string;
+	docked_at_base?: string | boolean | null;
+}): void {
+	const systemId = player.current_system ?? null;
+	const poiId = player.current_poi ?? null;
+	const docked = Boolean(player.docked_at_base);
+	const systemChanged = systemId && systemId !== lastSystemId;
+	const poiChanged = poiId && poiId !== lastPoiId;
+
+	if (systemChanged) {
+		worldSnapshot.system = null;
+		worldSnapshot.pois = [];
+		worldSnapshot.poi = null;
+		worldSnapshot.base = null;
+		client.state.system = null;
+		client.state.poi = null;
+		client.state.base = null;
+		client.getSystem();
+		client.getPOI();
+		if (docked) {
+			client.getBase();
+		}
+	} else if (poiChanged) {
+		worldSnapshot.poi = null;
+		worldSnapshot.base = null;
+		client.state.poi = null;
+		client.state.base = null;
+		client.getPOI();
+		if (docked) {
+			client.getBase();
+		}
+	}
+
+	if (!docked && lastDocked) {
+		worldSnapshot.base = null;
+		client.state.base = null;
+	}
+
+	if (docked && !lastDocked && !systemChanged && !poiChanged) {
+		client.getBase();
+	}
+
+	if (systemId) lastSystemId = systemId;
+	if (poiId) lastPoiId = poiId;
+	lastDocked = docked;
+}
+
 async function startActionLoop(): Promise<void> {
 	if (actionLoopRunning) return;
 	actionLoopRunning = true;
 
 	while (client.state.authenticated) {
 		try {
-			if (travelInProgress) {
+			if (travelInProgress || jumpInProgress) {
 				await sleep(config.tickDelayMs);
 				continue;
 			}
@@ -161,12 +276,18 @@ async function startActionLoop(): Promise<void> {
 				worldSnapshot,
 				recentHistory,
 				currentGoal,
+				personality: credentials?.personality,
 			});
 
 			tui.setPrompt(prompt);
 
 			const promptExcerpt = prompt.slice(0, 1000);
 			const result = await ollama.generateJson(prompt);
+			if (result.thinking) {
+				log(
+					`[Thinking] ${result.thinking.slice(0, 200)}${result.thinking.length > 200 ? "..." : ""}`,
+				);
+			}
 			const validation = validateAction(result.json);
 			if (!validation.ok || !validation.action) {
 				const message = `Invalid action from LLM: ${validation.error ?? "unknown"}`;
@@ -212,6 +333,10 @@ async function startActionLoop(): Promise<void> {
 			if (actionName === "travel") {
 				lastTravelTarget =
 					String(validation.action.args?.target_poi ?? "").trim() || null;
+			}
+			if (actionName === "jump") {
+				lastJumpTarget =
+					String(validation.action.args?.target_system ?? "").trim() || null;
 			}
 			const actionLog = dispatchAction(client, validation.action);
 			log(`Action: ${actionLog}`);
@@ -327,7 +452,16 @@ client.on<RegisteredPayload>("registered", async (data) => {
 	registrationRetries = 0;
 	failedRegistrationNames.length = 0;
 	if (pendingRegistration) {
-		await saveCredentials(pendingRegistration.username, data.token);
+		await saveCredentials(
+			pendingRegistration.username,
+			data.token,
+			pendingRegistration.personality,
+		);
+		credentials = {
+			username: pendingRegistration.username,
+			token: data.token,
+			personality: pendingRegistration.personality,
+		};
 		log(`Registered. Saved credentials for ${pendingRegistration.username}`);
 		pendingRegistration = null;
 	} else {
@@ -340,6 +474,9 @@ client.on<LoggedInPayload>("logged_in", (data) => {
 	memory.appendEvent("logged_in", data);
 	worldSnapshot.system = data.system;
 	worldSnapshot.poi = data.poi;
+	lastSystemId = data.player.current_system ?? null;
+	lastPoiId = data.player.current_poi ?? null;
+	lastDocked = Boolean(data.player.docked_at_base);
 	currentGoal = memory.getLatestGoal(data.player.username);
 	client.getSystem();
 	client.getPOI();
@@ -374,6 +511,7 @@ client.on<ErrorPayload>("error", (data) => {
 
 client.on<StateUpdatePayload>("state_update", (data) => {
 	memory.appendEvent("state_update", data);
+	refreshSnapshotForLocation(data.player);
 	updateStatus();
 	saveSnapshot();
 	if (data.in_combat) {
@@ -401,9 +539,18 @@ client.on("ok", (data: Record<string, unknown>) => {
 	if (action === "travel") {
 		travelInProgress = true;
 	}
+	if (action === "jump") {
+		jumpInProgress = true;
+	}
 	if (action === "arrived") {
 		travelInProgress = false;
 		lastTravelTarget = null;
+		client.getSystem();
+		client.getPOI();
+	}
+	if (action === "jumped") {
+		jumpInProgress = false;
+		lastJumpTarget = null;
 		client.getSystem();
 		client.getPOI();
 	}
@@ -415,6 +562,22 @@ client.on("version_info", (data: Record<string, unknown>) => {
 });
 
 credentials = await loadCredentials();
+
+// Force re-registration if personality is missing
+if (credentials && !credentials.personality) {
+	log("Credentials missing personality field - forcing re-registration");
+	try {
+		await Bun.write(config.credentialsFile, ""); // Clear file
+		const file = Bun.file(config.credentialsFile);
+		if (await file.exists()) {
+			await file.remove?.();
+		}
+	} catch (error) {
+		log(`Failed to delete credentials: ${(error as Error).message}`);
+	}
+	credentials = null;
+}
+
 await client.connect();
 updateStatus();
 
@@ -441,10 +604,16 @@ function buildStatusText(
 	snapshot: WorldSnapshot,
 	traveling: boolean,
 	travelTargetId: string | null,
+	jumping: boolean,
+	jumpTargetId: string | null,
 	goal: string | null,
 ): string {
 	if (!state.player || !state.ship) return "Not logged in";
 	const goalText = goal?.trim() ? ` | Goal: ${goal.trim()}` : "";
+	if (jumping) {
+		const destination = resolveSystemName(jumpTargetId, snapshot, state);
+		return `Jumping to ${destination}${goalText}`;
+	}
 	if (traveling) {
 		const destination = resolvePoiName(travelTargetId, snapshot, state);
 		return `Traveling to ${destination}${goalText}`;
@@ -459,6 +628,9 @@ function formatSidebar(
 	snapshot: WorldSnapshot,
 	traveling: boolean,
 	travelTargetId: string | null,
+	jumping: boolean,
+	jumpTargetId: string | null,
+	personality?: PersonalityType,
 ): string {
 	if (!state.player || !state.ship) return "Not logged in.";
 
@@ -480,13 +652,27 @@ function formatSidebar(
 	const base = snapshot.base ?? state.base;
 	const pois = snapshot.pois ?? [];
 
-	pushSection("Player", [
+	const playerLines = [
 		formatLine("Name", state.player.username, width),
 		formatLine("Empire", state.player.empire, width),
+	];
+	if (personality) {
+		const personalityInfo = PERSONALITY_ARCHETYPES[personality];
+		playerLines.push(
+			formatLine(
+				"Role",
+				`${personalityInfo.emoji} ${personalityInfo.name}`,
+				width,
+			),
+		);
+	}
+	playerLines.push(
 		formatLine("Credits", String(state.player.credits), width),
 		formatLine("Docked", state.player.docked_at_base ? "Y" : "N", width),
 		formatLine("Tick", String(state.currentTick), width),
-	]);
+	);
+
+	pushSection("Player", playerLines);
 
 	pushSection("Ship", [
 		formatLine("Hull", `${state.ship.hull}/${state.ship.max_hull}`, width),
@@ -511,12 +697,22 @@ function formatSidebar(
 		),
 		formatLine("POI", poi?.name ?? state.player.current_poi ?? "-", width),
 		formatLine("Travel", traveling ? "Y" : "N", width),
+		formatLine("Jump", jumping ? "Y" : "N", width),
 	];
 	if (traveling) {
 		locationLines.push(
 			formatLine(
 				"Dest",
 				resolvePoiName(travelTargetId, snapshot, state),
+				width,
+			),
+		);
+	}
+	if (jumping) {
+		locationLines.push(
+			formatLine(
+				"JumpDest",
+				resolveSystemName(jumpTargetId, snapshot, state),
 				width,
 			),
 		);
@@ -560,6 +756,19 @@ function styleLine(line: string): string {
 	if (line.includes("{")) return line;
 	if (line === "none" || line === "-") return `{gray-fg}${line}{/gray-fg}`;
 	return line;
+}
+
+function resolveSystemName(
+	systemId: string | null | undefined,
+	snapshot: WorldSnapshot,
+	state: ClientState,
+): string {
+	if (!systemId) return "Unknown";
+	if (snapshot.system?.id === systemId && snapshot.system.name)
+		return snapshot.system.name;
+	if (state.system?.id === systemId && state.system.name)
+		return state.system.name;
+	return systemId;
 }
 
 function resolvePoiName(

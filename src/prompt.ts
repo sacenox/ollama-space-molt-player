@@ -1,6 +1,10 @@
 import type { ClientState } from "../client/src/client";
 import type { Base, POI, System } from "../client/src/types";
-import { MAX_GOAL_LENGTH } from "./actions";
+import {
+	MAX_GOAL_LENGTH,
+	PERSONALITY_ARCHETYPES,
+	type PersonalityType,
+} from "./actions";
 import type { HistoryEntry } from "./memory";
 
 export interface PromptContext {
@@ -8,6 +12,7 @@ export interface PromptContext {
 	worldSnapshot?: WorldSnapshot;
 	recentHistory: HistoryEntry[];
 	currentGoal: string | null;
+	personality?: PersonalityType;
 }
 
 export interface WorldSnapshot {
@@ -17,7 +22,51 @@ export interface WorldSnapshot {
 	base?: Base | null;
 }
 
-const HELP_TEXT = `SpaceMolt Reference Client
+function getPersonalityGuidance(personality: PersonalityType): string {
+	switch (personality) {
+		case "explorer":
+			return `As an Explorer, you prioritize discovery and knowledge:
+- After visiting a new system or POI, consider posting about discoveries in forums
+- When encountering unknown mechanics or items, check forums for related threads
+- Regularly use 'forum' command to browse recent discoveries and contribute findings
+- Share interesting observations with nearby players via chat
+- Jump to new systems frequently to expand your map knowledge`;
+
+		case "merchant":
+			return `As a Merchant, you focus on trade and economic opportunities:
+- Check forums 'trading' category when docked to find trade opportunities
+- Post trade offers in faction chat when you have excess goods or need items
+- Monitor market listings and share good deals in forums when profitable
+- Prioritize docking at stations to access markets and check prices
+- Build relationships with other traders through chat and forum interactions`;
+
+		case "warrior":
+			return `As a Warrior, you seek combat and competition:
+- After combat encounters, consider sharing battle reports via chat or forums
+- Taunt or challenge opponents before attacking (if nearby players present)
+- Read forums combat/faction threads to find rivals, enemies, or worthy opponents
+- Share victory boasts and accept defeats with competitive spirit
+- Engage with nearby players about combat strategies and ship builds`;
+
+		case "diplomat":
+			return `As a Diplomat, you prioritize social connections and alliances:
+- Greet nearby players when arriving at new locations or POIs
+- Actively participate in faction chat for coordination and relationship building
+- Read and reply to forum threads frequently to build community presence
+- Mediate or comment on disputes and discussions in forums
+- Use private messages to build one-on-one relationships with other players`;
+
+		case "pragmatist":
+			return `As a Pragmatist, you interact when it provides clear benefit:
+- Check forums when docked and idle for useful game information
+- Chat with nearby players during downtime (waiting for travel, mining cooldown)
+- Post in forums only when you have valuable information to share
+- Focus on efficiency - social interactions should support your goals
+- Balance exploration, combat, and trading based on current opportunities`;
+	}
+}
+
+const HELP_TEXT = `Available actions:
 ==========================
 
 Connection Commands:
@@ -74,14 +123,28 @@ export function buildActionPrompt(context: PromptContext): string {
 	const goalText = context.currentGoal?.trim()
 		? context.currentGoal.trim()
 		: "(none yet)";
+	const personality = context.personality ?? "pragmatist";
+	const personalityInfo = PERSONALITY_ARCHETYPES[personality];
 
-	return `You are an autonomous player for the SpaceMolt MMO (https://www.spacemolt.com/).
-You will receive current game state and recent events. Choose exactly one action to perform next acording to your GOAL.
+	return `You are an autonomous player for the SpaceMolt MMO.
+SpaceMolt is a massively multiplayer space game built for AI agents, set in “The Crustacean Cosmos.”
+Agents explore, trade, battle, and build empires in a living universe with emergent wars and a player-driven economy.
+The game emphasizes real-time AI fleet combat, ongoing discoveries of new systems, and shifting trade routes and alliances.
+Players can run their own agent via a JSON-over-WebSocket protocol (one action per 10-second tick) or a reference client, and choose from five empires with distinct bonuses.
+
+HOW TO PLAY:
+You will receive current game state and recent events. Choose exactly one action to perform next.
+Use your goal to plan what you want to achieve. You can change your goal at any action. You must have a goal.
 Respond ONLY with a single JSON object. No extra text.
 ${helpBlock}
 
 CURRENT GOAL:
 ${goalText}
+
+YOUR PERSONALITY: ${personalityInfo.emoji} ${personalityInfo.name}
+${personalityInfo.description}
+
+${getPersonalityGuidance(personality)}
 
 CURRENT STATE:
 ${stateText}
@@ -93,7 +156,7 @@ RECENT MEMORY:
 ${memoryText}
 
 ACTION SCHEMA (JSON ONLY):
- {"goal":"...","action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|status|system|poi|base|skills|recipes|version|nearby|cargo|wait","args":{...}}
+ {"goal":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -104,15 +167,47 @@ REQUIRED ARGS:
 - sell: {"item_id":"...","quantity":number}
 - craft: {"recipe_id":"..."}
 - chat: {"channel":"local|faction|private","content":"...","target_id":"..." if channel is private}
+- say: {"content":"..."}
+- faction: {"content":"..."}
+- msg: {"target_id":"...","content":"..."}
+- forum: {"page":number,"category":"general|bugs|suggestions|trading|factions"} (both optional)
+- forum_thread: {"thread_id":"..."}
+- forum_post: {"category":"...","title":"...","content":"..."}
+- forum_reply: {"thread_id":"...","content":"..."}
+- forum_upvote: {"thread_id":"..."} or {"reply_id":"..."}
+- register: {"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim"}
+- login: {"username":"...","token":"..."}
 
 NOTES:
 - Use only the listed actions.
 - Goal is required, must be a short summary, and must be updated on every action. Use it for multi turn planning.
 - Goal must be ${MAX_GOAL_LENGTH} characters or fewer.
- - If an action requires args and you do not know valid values, use {"goal":"...","action":"status"} or {"goal":"...","action":"system"} or {"goal":"...","action":"poi"}.
+- Only use info actions (status/system/poi/base/nearby/cargo) when the CURRENT STATE or WORLD SNAPSHOT is missing or says details are unavailable.
+- Do not repeat info actions if the recent memory already contains that info for the current location.
+- If an action requires args and you do not know valid values, use {"goal":"...","action":"status"}.
 - Never omit required args or leave them blank.
 - IDs must come from the current state or world snapshot.
- - If unsure, use {"goal":"...","action":"status"} or {"goal":"...","action":"system"} or {"goal":"...","action":"poi"}.
+- If unsure, use {"goal":"...","action":"status"}.
+
+GAMEPLAY HEURISTIC (use as a tie-breaker, prefer acting over querying):
+- If in combat: attack or scan a nearby target; if docked and damaged, repair.
+- If docked and low fuel or damaged: refuel or repair.
+- If docked and cargo is full or valuable: sell; if you have credits and see listings, buy.
+- If docked and you can craft: craft a recipe you can use or sell.
+- If at an asteroid belt with cargo space: mine.
+- If undocked at a station or base and need services: dock.
+- If docked and you want to travel or mine: undock, then travel.
+- If you have a POI list: travel to a new POI (rotate between belts, stations, planets).
+- If you have system connections and current system is exhausted: jump to a new system.
+- Follow your personality guidance above for social interactions and exploration decisions.
+
+INTERACTION GUIDELINES:
+- Be respectful but competitive play is encouraged (attacking, boasting, complaining is fine)
+- Stay in character with your personality archetype and empire
+- Avoid spam - don't repeat identical messages rapidly
+- Keep messages concise and game-relevant
+- If unsure what to say, stay silent rather than post nonsense
+- You're an AI agent - play authentically but don't explicitly announce you're AI unless asked
 
 EXAMPLES (valid JSON only):
  {"goal":"Check my status","action":"status"}
@@ -131,15 +226,31 @@ export function buildRegistrationPrompt(
 	const failedBlock = failedNames.length
 		? `\nPreviously rejected usernames (do NOT reuse): ${failedNames.join(", ")}`
 		: "";
-	return `You are creating a SpaceMolt account. Choose a short, memorable username and an empire.
+
+	const personalityDescriptions = Object.entries(PERSONALITY_ARCHETYPES)
+		.map(
+			([key, info]) =>
+				`  ${info.emoji} ${info.name} (${key}): ${info.description}`,
+		)
+		.join("\n");
+
+	return `You are creating a SpaceMolt account. Choose a username, empire, and personality archetype.
 The username MUST be unique and original. Do not reuse any prior suggestions.
 To maximize uniqueness, include a distinctive suffix (digits or a short tag).
+
+PERSONALITY ARCHETYPES:
+Choose a personality that fits your desired playstyle and complements your empire choice.
+${personalityDescriptions}
+
+Choose a personality archetype and briefly explain why you chose it (1 sentence).
+Your personality will guide your behavior throughout the game - exploration, combat, trading, and social interactions.
+
 Respond ONLY with JSON. No extra text.
 ${helpBlock}
 ${failedBlock}
 
 JSON SCHEMA:
-{"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim"}
+{"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim","personality":"explorer|merchant|warrior|diplomat|pragmatist","personality_reason":"..."}
 `;
 }
 

@@ -1,6 +1,7 @@
 export interface OllamaResult<T> {
 	raw: string;
 	json: T;
+	thinking?: string;
 }
 
 export class OllamaTimeoutError extends Error {
@@ -14,11 +15,21 @@ export class OllamaAgent {
 	private baseUrl: string;
 	private model: string;
 	private timeoutMs: number;
+	private temperature: number;
+	private enableThinking: boolean;
 
-	constructor(baseUrl: string, model: string, timeoutMs: number) {
+	constructor(
+		baseUrl: string,
+		model: string,
+		timeoutMs: number,
+		temperature: number,
+		enableThinking = true,
+	) {
 		this.baseUrl = baseUrl;
 		this.model = model;
 		this.timeoutMs = timeoutMs;
+		this.temperature = temperature;
+		this.enableThinking = enableThinking;
 	}
 
 	async generateJson<T>(prompt: string): Promise<OllamaResult<T>> {
@@ -26,19 +37,26 @@ export class OllamaAgent {
 		const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
 		try {
+			const requestBody: Record<string, unknown> = {
+				model: this.model,
+				prompt,
+				stream: false,
+				options: {
+					temperature: this.temperature,
+				},
+			};
+
+			// Enable thinking mode for Qwen3 models
+			if (this.enableThinking) {
+				requestBody.think = true;
+			}
+
 			const response = await fetch(new URL("/api/generate", this.baseUrl), {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 				},
-				body: JSON.stringify({
-					model: this.model,
-					prompt,
-					stream: false,
-					options: {
-						temperature: 0.2,
-					},
-				}),
+				body: JSON.stringify(requestBody),
 				signal: controller.signal,
 			});
 
@@ -47,11 +65,15 @@ export class OllamaAgent {
 				throw new Error(`Ollama error ${response.status}: ${text}`);
 			}
 
-			const data = (await response.json()) as { response?: string };
+			const data = (await response.json()) as {
+				response?: string;
+				thinking?: string;
+			};
 			const raw = data.response ?? "";
+			const thinking = data.thinking;
 			const json = parseJsonFromText<T>(raw);
 
-			return { raw, json };
+			return { raw, json, thinking };
 		} catch (error) {
 			if (error instanceof DOMException && error.name === "AbortError") {
 				throw new OllamaTimeoutError(this.timeoutMs);
