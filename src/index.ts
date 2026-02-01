@@ -11,6 +11,9 @@ import { config } from "./config";
 import { GameState } from "./game-state";
 import { MemoryStore } from "./memory";
 import { OllamaAgent, OllamaTimeoutError } from "./ollama";
+import { FileLoggerOutput } from "./output/file-logger-output";
+import { TuiOutput } from "./output/tui-output";
+import type { OutputInterface } from "./output-interface";
 import { buildActionPrompt, type WorldSnapshot } from "./prompt";
 import { runRegistrationFlow } from "./registration";
 import {
@@ -26,7 +29,6 @@ import {
 	formatWelcome,
 	type OkContext,
 } from "./tui/formatters";
-import { Tui } from "./tui/index";
 import type { Credentials, PersonalityType } from "./types";
 import { detectRepetition, isNearbyTarget, sleep } from "./utils";
 
@@ -38,7 +40,12 @@ const ollama = new OllamaAgent(
 	config.ollamaTemperature,
 	config.ollamaThinking,
 );
-const tui = new Tui(config.debug);
+const output: OutputInterface = config.nonInteractive
+	? new FileLoggerOutput({
+			uiLogPath: config.uiLogPath,
+			debugLogPath: config.debugLogPath,
+		})
+	: new TuiOutput(config.debug);
 
 const client = new SpaceMoltClient({
 	url: config.spacemoltUrl,
@@ -49,6 +56,8 @@ const client = new SpaceMoltClient({
 const gameState = new GameState();
 let actionLoopRunning = false;
 const REPETITION_THRESHOLD = 3;
+let maxTicksStart: number | null = null;
+let fallbackTickCount = 0;
 
 async function loadCredentials(): Promise<Credentials | null> {
 	try {
@@ -71,9 +80,9 @@ async function saveCredentials(
 	await Bun.write(config.credentialsFile, JSON.stringify(data, null, 2));
 }
 
-function updateTui(): void {
+function updateOutput(): void {
 	const state = client.state;
-	tui.update({
+	output.update({
 		player: gameState.cachedPlayer,
 		ship: gameState.cachedShip,
 		system: gameState.worldSnapshot.system ?? state.system ?? null,
@@ -90,6 +99,20 @@ function updateTui(): void {
 		goal: gameState.currentGoal,
 		inCombat: gameState.inCombat,
 	});
+}
+
+function shouldStopForMaxTicks(): boolean {
+	if (config.maxTicks === null) return false;
+	const currentTick = client.state.currentTick;
+	if (typeof currentTick === "number" && maxTicksStart !== null) {
+		return currentTick - maxTicksStart > config.maxTicks;
+	}
+	if (typeof currentTick === "number" && maxTicksStart === null) {
+		maxTicksStart = currentTick;
+		return false;
+	}
+	fallbackTickCount += 1;
+	return fallbackTickCount > config.maxTicks;
 }
 
 function saveSnapshot(): void {
@@ -163,6 +186,15 @@ async function startActionLoop(): Promise<void> {
 				await sleep(config.tickDelayMs);
 				continue;
 			}
+			if (shouldStopForMaxTicks()) {
+				output.log(
+					formatSystemMessage(
+						`Max ticks reached (${config.maxTicks}). Shutting down.`,
+					),
+				);
+				shutdown();
+				break;
+			}
 			const recentHistory = memory.getRecentHistory(
 				config.maxContextActions,
 				config.maxContextEvents,
@@ -181,17 +213,20 @@ async function startActionLoop(): Promise<void> {
 				repetitionWarning,
 			});
 
-			tui.setPrompt(prompt);
+			output.setPrompt(prompt);
+			output.logDebug("LLM_PROMPT", prompt);
 
 			const promptExcerpt = prompt.slice(0, 1000);
 			const result = await ollama.generateJson(prompt);
+			output.logDebug("LLM_RESPONSE_RAW", result.raw);
 			if (result.thinking) {
-				tui.log(formatAiThinking(result.thinking));
+				output.log(formatAiThinking(result.thinking));
+				output.logDebug("LLM_THINKING", result.thinking);
 			}
 			const validation = validateAction(result.json);
 			if (!validation.ok || !validation.action) {
 				const message = `Invalid action from LLM: ${validation.error ?? "unknown"}`;
-				tui.log(formatSystemMessage(message));
+				output.log(formatSystemMessage(message));
 				memory.appendEvent("llm_invalid_action", {
 					error: validation.error,
 					raw: result.raw,
@@ -209,7 +244,7 @@ async function startActionLoop(): Promise<void> {
 				const message = target
 					? `Invalid action from LLM: Unknown nearby target: ${target}`
 					: "Invalid action from LLM: Missing target_id";
-				tui.log(formatSystemMessage(message));
+				output.log(formatSystemMessage(message));
 				memory.appendEvent("llm_invalid_action", {
 					error: message,
 					raw: result.raw,
@@ -223,8 +258,8 @@ async function startActionLoop(): Promise<void> {
 			if (client.state.player?.username && goal) {
 				gameState.currentGoal = goal;
 				memory.setGoal(client.state.player.username, goal);
-				tui.log(formatAiGoal(goal));
-				updateTui();
+				output.log(formatAiGoal(goal));
+				updateOutput();
 			}
 			memory.appendAction(
 				actionName,
@@ -241,7 +276,7 @@ async function startActionLoop(): Promise<void> {
 					String(validation.action.args?.target_system ?? "").trim() || null;
 			}
 			dispatchAction(client, validation.action);
-			tui.log(formatAiAction(actionName, validation.action.args));
+			output.log(formatAiAction(actionName, validation.action.args));
 			memory.appendEvent("action_sent", { action: validation.action });
 
 			if (actionName === "travel") {
@@ -251,12 +286,12 @@ async function startActionLoop(): Promise<void> {
 		} catch (error) {
 			const message = (error as Error).message;
 			if (error instanceof OllamaTimeoutError) {
-				tui.log(
+				output.log(
 					formatSystemMessage(`LLM timeout: ${message}. Retrying next tick.`),
 				);
 				memory.appendEvent("llm_timeout", { message });
 			} else {
-				tui.log(formatSystemMessage(`Loop error: ${message}`));
+				output.log(formatSystemMessage(`Loop error: ${message}`));
 				memory.appendEvent("loop_error", { message });
 			}
 		}
@@ -273,11 +308,11 @@ function shutdown(): void {
 	} catch {
 		// ignore
 	}
-	tui.destroy();
+	output.destroy();
 	process.exit(0);
 }
 
-tui.onExit(shutdown);
+output.onExit(shutdown);
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
@@ -287,18 +322,18 @@ client.on("raw_message", (data: { type: string; payload: unknown }) => {
 });
 
 client.on<WelcomePayload>("welcome", async (data) => {
-	tui.log(formatWelcome(data));
-	if (data.motd) tui.log(formatMotd(data.motd));
+	output.log(formatWelcome(data));
+	if (data.motd) output.log(formatMotd(data.motd));
 	memory.appendEvent("welcome", data);
 
 	if (gameState.credentials) {
-		tui.log(
+		output.log(
 			formatSystemMessage(`Auto-login as ${gameState.credentials.username}`),
 		);
 		client.login(gameState.credentials.username, gameState.credentials.token);
 	} else {
 		gameState.pendingRegistration = await runRegistrationFlow(
-			tui,
+			output,
 			ollama,
 			client,
 			gameState.failedRegistrationNames,
@@ -307,7 +342,7 @@ client.on<WelcomePayload>("welcome", async (data) => {
 });
 
 client.on<ErrorPayload>("error", (data) => {
-	tui.log(formatError(data));
+	output.log(formatError(data));
 	memory.appendEvent("error", data);
 	if (data.code === "username_taken" && gameState.pendingRegistration) {
 		if (gameState.pendingRegistration.username) {
@@ -317,14 +352,14 @@ client.on<ErrorPayload>("error", (data) => {
 		}
 		if (gameState.registrationRetries < gameState.MAX_REGISTRATION_RETRIES) {
 			gameState.registrationRetries += 1;
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					"Username taken. Requesting a new registration name...",
 				),
 			);
 			gameState.pendingRegistration = null;
 			runRegistrationFlow(
-				tui,
+				output,
 				ollama,
 				client,
 				gameState.failedRegistrationNames,
@@ -332,7 +367,7 @@ client.on<ErrorPayload>("error", (data) => {
 				gameState.pendingRegistration = choice;
 			});
 		} else {
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					"Username taken repeatedly. Falling back to random name.",
 				),
@@ -371,7 +406,7 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 				token: token,
 				personality: gameState.pendingRegistration.personality,
 			};
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					`Credentials saved for ${gameState.pendingRegistration.username}`,
 				),
@@ -383,7 +418,7 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 				initializeSessionFromStateUpdate(data);
 			}
 		} catch (err) {
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					`Failed to save credentials: ${(err as Error).message}`,
 				),
@@ -422,7 +457,7 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 		if (creditsChanged) {
 			const diff = data.player.credits - (gameState.lastCredits ?? 0);
 			const sign = diff > 0 ? "+" : "";
-			tui.log(
+			output.log(
 				formatSystemMessage(`Credits: ${data.player.credits} (${sign}${diff})`),
 			);
 			gameState.lastCredits = data.player.credits;
@@ -435,22 +470,22 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 
 	// Log combat state changes
 	if (gameState.inCombat && !wasInCombat) {
-		tui.log(formatSystemMessage("COMBAT STARTED"));
+		output.log(formatSystemMessage("COMBAT STARTED"));
 	} else if (!gameState.inCombat && wasInCombat) {
-		tui.log(formatSystemMessage("Combat ended"));
+		output.log(formatSystemMessage("Combat ended"));
 	}
 
-	updateTui();
+	updateOutput();
 	saveSnapshot();
 });
 
 client.on<ChatMessage>("chat_message", (data) => {
-	tui.log(formatChatMessage(data));
+	output.log(formatChatMessage(data));
 	memory.appendEvent("chat_message", data);
 });
 
 client.on<ScanResultPayload>("scan_result", (data) => {
-	tui.log(formatScanResult(data));
+	output.log(formatScanResult(data));
 	memory.appendEvent("scan_result", data);
 });
 
@@ -459,7 +494,7 @@ client.on("ok", (data: Record<string, unknown>) => {
 		jumpTarget: gameState.lastJumpTarget,
 		travelTarget: gameState.lastTravelTarget,
 	};
-	tui.log(formatOk(data, okContext));
+	output.log(formatOk(data, okContext));
 	memory.appendEvent("ok", data);
 	updateWorldSnapshotFromOk(data);
 
@@ -482,12 +517,12 @@ client.on("ok", (data: Record<string, unknown>) => {
 		client.getSystem();
 		client.getPOI();
 	}
-	updateTui();
+	updateOutput();
 });
 
 client.on("version_info", (data: Record<string, unknown>) => {
 	const version = String(data.version ?? "unknown");
-	tui.log(formatSystemMessage(`Version: ${version}`));
+	output.log(formatSystemMessage(`Version: ${version}`));
 	memory.appendEvent("version_info", data);
 });
 
@@ -496,10 +531,13 @@ gameState.credentials = await loadCredentials();
 console.log(`Instance: ${config.instanceName}`);
 console.log(`Credentials: ${config.credentialsFile}`);
 console.log(`Memory DB: ${config.memoryPath}`);
+output.log(formatSystemMessage(`Instance: ${config.instanceName}`));
+output.log(formatSystemMessage(`Credentials: ${config.credentialsFile}`));
+output.log(formatSystemMessage(`Memory DB: ${config.memoryPath}`));
 
 // Force re-registration if personality is missing
 if (gameState.credentials && !gameState.credentials.personality) {
-	tui.log(
+	output.log(
 		formatSystemMessage(
 			"Credentials missing personality field - forcing re-registration",
 		),
@@ -511,7 +549,7 @@ if (gameState.credentials && !gameState.credentials.personality) {
 			await file.remove?.();
 		}
 	} catch (error) {
-		tui.log(
+		output.log(
 			formatSystemMessage(
 				`Failed to delete credentials: ${(error as Error).message}`,
 			),
@@ -521,7 +559,7 @@ if (gameState.credentials && !gameState.credentials.personality) {
 }
 
 await client.connect();
-updateTui();
+updateOutput();
 
 function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
 	if (data.system && typeof data.system === "object") {
@@ -565,9 +603,9 @@ function initializeSessionFromStateUpdate(
 	}
 
 	if (message) {
-		tui.log(formatSystemMessage(message));
+		output.log(formatSystemMessage(message));
 	}
-	updateTui();
+	updateOutput();
 	saveSnapshot();
 	startActionLoop();
 }

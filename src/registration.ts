@@ -2,19 +2,19 @@ import type { SpaceMoltClient } from "../client/src/client";
 import type { EmpireID } from "../client/src/types";
 import { PERSONALITY_ARCHETYPES } from "./constants";
 import type { OllamaAgent } from "./ollama";
+import type { OutputInterface } from "./output-interface";
 import { buildRegistrationPrompt } from "./prompt";
 import { formatAiThinking, formatSystemMessage } from "./tui/formatters";
-import type { Tui } from "./tui/index";
 import type { RegistrationChoice } from "./types";
 import { isValidEmpire, isValidPersonality } from "./utils";
 
 export async function runRegistrationFlow(
-	tui: Tui,
+	output: OutputInterface,
 	ollama: OllamaAgent,
 	client: SpaceMoltClient,
 	failedRegistrationNames: string[],
 ): Promise<RegistrationChoice> {
-	tui.log(
+	output.log(
 		formatSystemMessage(
 			"No credentials found. Asking LLM to create a character...",
 		),
@@ -24,10 +24,13 @@ export async function runRegistrationFlow(
 		attempts += 1;
 		try {
 			const prompt = buildRegistrationPrompt(true, failedRegistrationNames);
-			tui.setPrompt(prompt);
+			output.setPrompt(prompt);
+			output.logDebug("REGISTRATION_PROMPT", prompt);
 			const result = await ollama.generateJson<RegistrationChoice>(prompt);
+			output.logDebug("REGISTRATION_RESPONSE_RAW", result.raw);
 			if (result.thinking) {
-				tui.log(formatAiThinking(result.thinking));
+				output.log(formatAiThinking(result.thinking));
+				output.logDebug("REGISTRATION_THINKING", result.thinking);
 			}
 			const username = String(result.json.username ?? "").trim();
 			const empire = String(result.json.empire ?? "").trim() as EmpireID;
@@ -54,10 +57,10 @@ export async function runRegistrationFlow(
 			};
 
 			const personalityInfo = PERSONALITY_ARCHETYPES[personality];
-			tui.log(
+			output.log(
 				formatSystemMessage(`Registering new account: ${username} (${empire})`),
 			);
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					`Chosen personality: ${personalityInfo.name}${personalityReason ? ` - ${personalityReason}` : ""}`,
 				),
@@ -65,7 +68,7 @@ export async function runRegistrationFlow(
 			client.register(username, empire);
 			return choice;
 		} catch (error) {
-			tui.log(
+			output.log(
 				formatSystemMessage(
 					`Registration attempt failed: ${(error as Error).message}`,
 				),
@@ -79,7 +82,7 @@ export async function runRegistrationFlow(
 		empire: "solarian",
 		personality: "pragmatist",
 	};
-	tui.log(
+	output.log(
 		formatSystemMessage(
 			`Falling back to account: ${fallback} (solarian, pragmatist)`,
 		),

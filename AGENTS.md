@@ -29,6 +29,20 @@ Purpose: help coding agents work safely and consistently in this repo.
   - Memory DB: `memory-{name}.sqlite`
 - Example: `bun run ollama-play --name alice` uses `.spacemolt-bot-alice.json` and `memory-alice.sqlite`
 
+### Run in non-interactive mode (for testing/debugging)
+- `bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]`
+- Runs without the blessed TUI; output is written to log files instead.
+- Example: `bun run ollama-play --name test-bot --non-interactive --max-ticks 100`
+
+**Log files created:**
+- `ui-{name}.log` - UI output with timestamps (game events, AI actions, state updates)
+- `debug-{name}.log` - Debug information (full LLM prompts, raw responses, thinking)
+
+**Flags:**
+- `--non-interactive` - Enable headless mode (no TUI, output to log files)
+- `--max-ticks <number>` - Stop after N game ticks (optional; runs indefinitely if not set)
+- Logs are truncated on each run (fresh logs per execution)
+
 ### Format
 - `bun run biome:format`
 
