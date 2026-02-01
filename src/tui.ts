@@ -11,6 +11,7 @@ export class Tui {
       smartCSR: true,
       title: "SpaceMolt Ollama Player",
       fullUnicode: false,
+      terminal: resolveTerminal(),
     });
 
     this.logBox = blessed.log({
@@ -43,6 +44,7 @@ export class Tui {
       left: 0,
       width: "100%",
       height: 1,
+      tags: true,
       style: {
         bg: "black",
         fg: "cyan",
@@ -78,6 +80,14 @@ export class Tui {
   destroy(): void {
     this.screen.destroy();
   }
+}
+
+function resolveTerminal(): string | undefined {
+  const override = process.env.BLESSED_TERM;
+  if (override) return override;
+  const term = process.env.TERM;
+  if (term === "xterm-ghostty") return "xterm-256color";
+  return term ?? "xterm-256color";
 }
 
 function colorize(message: string): string {
