@@ -3,7 +3,12 @@
 
 import type { ClientState } from "../client/src/client";
 import type { HistoryEntry } from "../src/memory";
-import { buildActionPrompt, type WorldSnapshot } from "../src/prompt";
+import { OllamaAgent } from "../src/ollama";
+import {
+	buildActionPrompt,
+	buildSummaryPrompt,
+	type WorldSnapshot,
+} from "../src/prompt";
 import type {
 	AlignmentType,
 	PersonalityType,
@@ -270,30 +275,51 @@ const mockForumFollowUpStatus: "unread" | "periodic" | null = "periodic";
 
 // Mock repetition warning (null = no warning)
 const mockRepetitionWarning: { action: string; count: number } | null = null;
-const mockMemorySummary =
-	"Recently traveled to the asteroid belt and mined resources while staying alert for nearby activity.";
 const mockLastActionResult =
 	"Action: 2025-01-01T00:00:00.000Z mine\nResult:\n- Mined 5x iron_ore";
 
-// Build the prompt exactly as we would in production
-const prompt = buildActionPrompt({
-	state: mockClientState,
-	worldSnapshot: mockWorldSnapshot,
-	recentHistory: mockRecentHistory,
-	memorySummary: mockMemorySummary,
-	lastActionResult: mockLastActionResult,
-	currentGoal:
-		"Map the Sol Prime system and gather resources for the journey to Alpha Centauri",
-	empire: mockPlayer.empire,
-	alignment: mockAlignment,
-	personality: mockPersonality,
-	speechStyle: mockSpeechStyle,
-	lastForumThreadId: mockLastForumThreadId,
-	lastForumPostTitle: mockLastForumPostTitle,
-	lastForumPostCategory: mockLastForumPostCategory,
-	forumFollowUpStatus: mockForumFollowUpStatus,
-	repetitionWarning: mockRepetitionWarning,
-});
+// Create Ollama client for generating memory summary
+const ollama = new OllamaAgent(
+	process.env.OLLAMA_URL ?? "http://localhost:11434",
+	process.env.OLLAMA_MODEL ?? "qwen3:8b",
+	60000, // timeout
+	0.1, // temperature for summary (lower for deterministic output)
+	false, // no thinking for summary
+);
 
-// Output verbatim
-console.log(prompt);
+async function main() {
+	// Generate memory summary via Ollama (just like production)
+	let memorySummary = "(summary unavailable)";
+	try {
+		const summaryPrompt = buildSummaryPrompt(mockRecentHistory);
+		const summaryText = await ollama.generateText(summaryPrompt);
+		memorySummary = summaryText || "(summary unavailable)";
+	} catch (error) {
+		console.error("Error generating summary:", (error as Error).message);
+	}
+
+	// Build the prompt exactly as we would in production
+	const prompt = buildActionPrompt({
+		state: mockClientState,
+		worldSnapshot: mockWorldSnapshot,
+		recentHistory: mockRecentHistory,
+		memorySummary,
+		lastActionResult: mockLastActionResult,
+		currentGoal:
+			"Map the Sol Prime system and gather resources for the journey to Alpha Centauri",
+		empire: mockPlayer.empire,
+		alignment: mockAlignment,
+		personality: mockPersonality,
+		speechStyle: mockSpeechStyle,
+		lastForumThreadId: mockLastForumThreadId,
+		lastForumPostTitle: mockLastForumPostTitle,
+		lastForumPostCategory: mockLastForumPostCategory,
+		forumFollowUpStatus: mockForumFollowUpStatus,
+		repetitionWarning: mockRepetitionWarning,
+	});
+
+	// Output verbatim
+	console.log(prompt);
+}
+
+main();
