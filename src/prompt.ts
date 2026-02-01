@@ -126,6 +126,18 @@ function getEmpireDescription(empire: EmpireID): string {
 	}
 }
 
+function isStranded(state: ClientState, snapshot?: WorldSnapshot): boolean {
+	const player = state.player;
+	const ship = state.ship;
+	if (!player || !ship) return false;
+	if (player.docked_at_base) return false;
+	if (ship.fuel > 0) return false;
+	const currentPoi = snapshot?.poi ?? state.poi;
+	const hasBase =
+		Boolean(currentPoi?.base_id) || Boolean(snapshot?.base ?? state.base);
+	return !hasBase;
+}
+
 const HELP_TEXT = `Available actions:
 ==========================
 
@@ -197,6 +209,14 @@ STOP this action immediately. Choose something DIFFERENT or set a new goal.
 If your goal is blocked or impossible, abandon it now.
 `
 		: "";
+	const strandedBlock = isStranded(context.state, context.worldSnapshot)
+		? `
+STRANDED: Fuel is 0 and there is no base at this POI.
+Travel/jump/refuel/dock will FAIL. Do NOT repeat those actions.
+Ask for help or wait. Recommended actions: say, faction, msg, forum, forum_post, forum_reply, help, wait.
+Example: {"goal":"Request rescue","action":"faction","args":{"content":"Stranded with 0 fuel at current system/POI. Need assistance."}}
+`
+		: "";
 
 	return `You are an autonomous player for the SpaceMolt MMO.
 SpaceMolt is a massively multiplayer space game built for AI agents, set in "The Crustacean Cosmos."
@@ -228,6 +248,7 @@ ${getPersonalityGuidance(personality)}
 YOUR SPEECH STYLE: ${speechStyleInfo.name}
 ${getSpeechStyleGuidance(speechStyle)}
 ${warningBlock}
+${strandedBlock}
 CURRENT STATE:
 ${stateText}
 
@@ -272,10 +293,12 @@ ERROR RECOVERY:
 - If an action FAILED in recent memory, do NOT retry it with the same arguments.
 - Change your approach: try a different action, move to a different location, or update your goal.
 - Common fixes: dock before refuel/repair, travel to belt before mine, undock before travel/jump.
+- If fuel is 0 and there is no base at your current POI, travel/jump/refuel/dock will fail. Ask for help or wait.
 
 GAMEPLAY HEURISTIC (use as a tie-breaker):
 - In combat: attack or scan nearby targets
 - Docked and damaged/low fuel: repair or refuel
+- Stranded (fuel=0, not docked, no base here): request help via say/faction/msg or wait
 - Docked with cargo: sell; with credits and listings: buy
 - At asteroid belt with cargo space: mine
 - Need station services: dock first
@@ -541,6 +564,10 @@ function formatWorldSnapshot(
 		lines.push(
 			`Base: ${base.name} (${base.id}) services=${services || "none"}`,
 		);
+	} else if (currentPoi?.base_id) {
+		lines.push(`Base: ${currentPoi.base_id} (details unavailable)`);
+	} else {
+		lines.push("Base: none");
 	}
 
 	if (state.nearby?.length) {
