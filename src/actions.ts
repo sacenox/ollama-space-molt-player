@@ -1,8 +1,6 @@
 import type { SpaceMoltClient } from "../client/src/client";
-import type { EmpireID } from "../client/src/types";
 import { ACTION_DEFINITIONS, MAX_MISSION_LENGTH } from "./constants";
 import type { ActionDecision } from "./types";
-import { isValidEmpire } from "./utils";
 
 export { MAX_MISSION_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
 export type { ActionDecision, PersonalityType } from "./types";
@@ -109,31 +107,6 @@ export function validateAction(decision: unknown): {
 		}
 	}
 
-	if (action === "register") {
-		const username = String(args.username ?? "").trim();
-		const empire = String(args.empire ?? "").trim();
-		if (!username) {
-			return { ok: false, error: "register.username is required" };
-		}
-		if (!empire) {
-			return { ok: false, error: "register.empire is required" };
-		}
-		if (!isValidEmpire(empire)) {
-			return { ok: false, error: "register.empire is invalid" };
-		}
-	}
-
-	if (action === "login") {
-		const username = String(args.username ?? "").trim();
-		const token = String(args.token ?? "").trim();
-		if (!username) {
-			return { ok: false, error: "login.username is required" };
-		}
-		if (!token) {
-			return { ok: false, error: "login.token is required" };
-		}
-	}
-
 	if (action === "forum") {
 		if (args.page !== undefined) {
 			const page = Number(args.page);
@@ -234,15 +207,6 @@ export function dispatchAction(
 	const args = decision.args ?? {};
 
 	switch (decision.action) {
-		case "register":
-			client.register(String(args.username), String(args.empire) as EmpireID);
-			return `register ${String(args.username)}`;
-		case "login":
-			client.login(String(args.username), String(args.token));
-			return `login ${String(args.username)}`;
-		case "logout":
-			client.logout();
-			return "logout";
 		case "travel":
 			client.travel(String(args.target_poi));
 			return `travel ${String(args.target_poi)}`;

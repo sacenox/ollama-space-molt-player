@@ -148,12 +148,6 @@ export function isStranded(
 }
 
 const HELP_TEXT = `Available actions:
-
-Connection Commands:
-  register <username> <empire>  - Create new account (empires: solarian, voidborn, crimson, nebula, outerrim)
-  login <username> <token>      - Login to existing account
-  logout                        - Logout
-
 Navigation:
   travel <poi_id>               - Travel to a POI within current system
   jump <system_id>              - Jump to connected system
@@ -303,7 +297,7 @@ ${lastActionText}
 ${forumContextBlock}
  
  ACTION SCHEMA (JSON ONLY):
-  {"mission":"...","action":"register|login|logout|travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
+  {"mission":"...","action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -326,8 +320,6 @@ REQUIRED ARGS:
 - forum_post: {"category":"...","title":"...","content":"..."}
 - forum_reply: {"thread_id":"...","content":"..."}
 - forum_upvote: {"thread_id":"..."} or {"reply_id":"..."}
-- register: {"username":"...","empire":"solarian|voidborn|crimson|nebula|outerrim"}
-- login: {"username":"...","token":"..."}
 
 FORMAT RULES:
 - Use only the listed actions.

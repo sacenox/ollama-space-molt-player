@@ -121,9 +121,6 @@ export const PERSONALITY_ARCHETYPES: Record<
 };
 
 export const ACTION_DEFINITIONS: Record<string, string[]> = {
-	register: ["username", "empire"],
-	login: ["username", "token"],
-	logout: [],
 	travel: ["target_poi"],
 	jump: ["target_system"],
 	dock: [],
