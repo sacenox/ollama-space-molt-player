@@ -380,30 +380,7 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 
 			// Start action loop since logged_in won't fire on v0.3.0+
 			if (!client.state.authenticated) {
-				client.state.authenticated = true;
-				gameState.cachedPlayer = data.player;
-				gameState.cachedShip = data.ship;
-				gameState.lastCredits = data.player.credits;
-
-				// Initialize other state
-				gameState.worldSnapshot.system = data.system;
-				gameState.worldSnapshot.poi = data.poi;
-				if (data.player.current_system)
-					gameState.lastSystemId = data.player.current_system;
-				if (data.player.current_poi)
-					gameState.lastPoiId = data.player.current_poi;
-				gameState.lastDocked = Boolean(data.player.docked_at_base);
-				gameState.currentGoal = memory.getLatestGoal(data.player.username);
-
-				client.getSystem();
-				client.getPOI();
-				if (data.player.docked_at_base) {
-					client.getBase();
-				}
-
-				updateTui();
-				saveSnapshot();
-				startActionLoop();
+				initializeSessionFromStateUpdate(data);
 			}
 		} catch (err) {
 			tui.log(
@@ -421,32 +398,10 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 	) {
 		// Recovery: we have credentials, and received a state update for our user, but aren't flagged as authenticated/running.
 		// This might happen if we reconnected and missed a welcome/login event or similar, or just standard 0.3.0+ flow
-		client.state.authenticated = true;
-		gameState.cachedPlayer = data.player;
-		gameState.cachedShip = data.ship;
-		gameState.lastCredits = data.player.credits;
-
-		gameState.worldSnapshot.system = data.system;
-		gameState.worldSnapshot.poi = data.poi;
-		if (data.player.current_system)
-			gameState.lastSystemId = data.player.current_system;
-		if (data.player.current_poi) gameState.lastPoiId = data.player.current_poi;
-		gameState.lastDocked = Boolean(data.player.docked_at_base);
-		gameState.currentGoal = memory.getLatestGoal(data.player.username);
-
-		// Refresh world data
-		client.getSystem();
-		client.getPOI();
-		if (data.player.docked_at_base) {
-			client.getBase();
-		}
-
-		tui.log(
-			formatSystemMessage(`Recovered session for ${data.player.username}`),
+		initializeSessionFromStateUpdate(
+			data,
+			`Recovered session for ${data.player.username}`,
 		);
-		updateTui();
-		saveSnapshot();
-		startActionLoop();
 	}
 
 	// Update cached player and ship data (only if provided)
@@ -581,4 +536,38 @@ function updateWorldSnapshotFromOk(data: Record<string, unknown>): void {
 	if (data.base && typeof data.base === "object") {
 		gameState.worldSnapshot.base = data.base as WorldSnapshot["base"];
 	}
+}
+
+function initializeSessionFromStateUpdate(
+	data: StateUpdatePayload,
+	message?: string,
+): void {
+	if (!data.player) return;
+
+	client.state.authenticated = true;
+	gameState.cachedPlayer = data.player;
+	gameState.cachedShip = data.ship;
+	gameState.lastCredits = data.player.credits;
+
+	gameState.worldSnapshot.system = data.system;
+	gameState.worldSnapshot.poi = data.poi;
+	if (data.player.current_system)
+		gameState.lastSystemId = data.player.current_system;
+	if (data.player.current_poi) gameState.lastPoiId = data.player.current_poi;
+	gameState.lastDocked = Boolean(data.player.docked_at_base);
+	gameState.currentGoal = memory.getLatestGoal(data.player.username);
+
+	// Refresh world data
+	client.getSystem();
+	client.getPOI();
+	if (data.player.docked_at_base) {
+		client.getBase();
+	}
+
+	if (message) {
+		tui.log(formatSystemMessage(message));
+	}
+	updateTui();
+	saveSnapshot();
+	startActionLoop();
 }

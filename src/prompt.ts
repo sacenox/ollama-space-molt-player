@@ -1,11 +1,8 @@
 import type { ClientState } from "../client/src/client";
 import type { Base, POI, System } from "../client/src/types";
-import {
-	MAX_GOAL_LENGTH,
-	PERSONALITY_ARCHETYPES,
-	type PersonalityType,
-} from "./actions";
+import { MAX_GOAL_LENGTH, PERSONALITY_ARCHETYPES } from "./constants";
 import type { HistoryEntry } from "./memory";
+import type { PersonalityType } from "./types";
 
 export interface PromptContext {
 	state: ClientState;

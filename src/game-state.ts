@@ -28,11 +28,4 @@ export class GameState {
 	failedRegistrationNames: string[] = [];
 
 	readonly MAX_REGISTRATION_RETRIES = 3;
-
-	resetTravelState() {
-		this.travelInProgress = false;
-		this.lastTravelTarget = null;
-		this.jumpInProgress = false;
-		this.lastJumpTarget = null;
-	}
 }
