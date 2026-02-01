@@ -11,7 +11,7 @@ import type {
 } from "../client/src/types";
 import { config } from "./config";
 import { MemoryStore } from "./memory";
-import { OllamaAgent } from "./ollama";
+import { OllamaAgent, OllamaTimeoutError } from "./ollama";
 import { buildActionPrompt, buildRegistrationPrompt } from "./prompt";
 import { dispatchAction, validateAction } from "./actions";
 import { Tui } from "./tui";
@@ -160,8 +160,15 @@ async function startActionLoop(): Promise<void> {
       log(`Action: ${actionLog}`);
       memory.appendEvent("action_sent", { action: validation.action });
     } catch (error) {
-      log(`Loop error: ${(error as Error).message}`);
-      memory.appendEvent("loop_error", { message: (error as Error).message });
+      const message = (error as Error).message;
+      if (error instanceof OllamaTimeoutError) {
+        log(`LLM timeout: ${message}. Retrying next tick.`);
+        memory.appendEvent("llm_timeout", { message });
+      } else {
+        log(`Loop error: ${message}`);
+        memory.appendEvent("loop_error", { message });
+      }
+      includeHelpInPrompt = true;
     }
 
     await sleep(config.tickDelayMs);

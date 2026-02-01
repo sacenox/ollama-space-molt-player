@@ -3,6 +3,13 @@ export interface OllamaResult<T> {
   json: T;
 }
 
+export class OllamaTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Ollama request timed out after ${timeoutMs}ms`);
+    this.name = "OllamaTimeoutError";
+  }
+}
+
 export class OllamaAgent {
   private baseUrl: string;
   private model: string;
@@ -45,6 +52,11 @@ export class OllamaAgent {
       const json = parseJsonFromText<T>(raw);
 
       return { raw, json };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new OllamaTimeoutError(this.timeoutMs);
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
