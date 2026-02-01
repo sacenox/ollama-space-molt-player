@@ -658,6 +658,11 @@ function formatHistoryForSummary(history: HistoryEntry[]): string {
 			continue;
 		}
 
+		// Skip raw server messages (debugging data, not game events)
+		if (entry.type.startsWith("raw_")) {
+			continue;
+		}
+
 		const summary = summarizeEvent(entry);
 		if (summary) {
 			lines.push(`${entry.ts} EVENT: ${entry.type} ${summary}`.trim());
