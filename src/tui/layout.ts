@@ -28,6 +28,7 @@ export interface ComputedLayout {
 	// Center Column
 	log: PanelDimensions;
 	actionResult: PanelDimensions;
+	gameStatus: PanelDimensions;
 
 	// Right Column
 	tactical: PanelDimensions;
@@ -81,9 +82,16 @@ export function computeLayout(
 	);
 
 	// -- Center Column --
-	// Split: Log (75%), Action Result (25%)
-	const resultHeight = Math.max(6, Math.floor(availableHeight * 0.25));
-	const logHeight = Math.max(MIN_PANEL_HEIGHT, availableHeight - resultHeight);
+	// Split: Log (75%), Bottom section (25%)
+	// Bottom section splits horizontally: Result (70%) | Status (30%)
+	const bottomSectionHeight = Math.max(6, Math.floor(availableHeight * 0.25));
+	const logHeight = Math.max(
+		MIN_PANEL_HEIGHT,
+		availableHeight - bottomSectionHeight,
+	);
+
+	const resultWidth = Math.floor(centerWidthAbs * 0.7);
+	const statusWidth = centerWidthAbs - resultWidth;
 
 	// -- Right Column --
 	// Split: Tactical (40%), Context (60%)
@@ -127,8 +135,14 @@ export function computeLayout(
 		actionResult: {
 			left: leftWidthAbs,
 			top: logHeight,
-			width: centerWidthAbs,
-			height: resultHeight,
+			width: resultWidth,
+			height: bottomSectionHeight,
+		},
+		gameStatus: {
+			left: leftWidthAbs + resultWidth,
+			top: logHeight,
+			width: statusWidth,
+			height: bottomSectionHeight,
 		},
 
 		// Right

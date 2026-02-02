@@ -26,6 +26,13 @@ export class TuiOutput implements OutputInterface {
 		this.tui.setPrompt(content);
 	}
 
+	setGameStatus(
+		activity: import("../types").GameStatusType,
+		details?: string,
+	): void {
+		this.tui.setGameStatus(activity, details);
+	}
+
 	logDebug(_label: string, _content: string): void {
 		// No-op in interactive mode.
 	}

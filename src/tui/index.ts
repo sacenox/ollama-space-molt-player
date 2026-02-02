@@ -2,11 +2,16 @@
 
 import blessed from "blessed";
 import type { Base, Player, POI, Ship, System } from "../../client/src/types";
-import type { AlignmentType } from "../types";
+import type {
+	ActionHistoryEntry,
+	AlignmentType,
+	GameStatusType,
+} from "../types";
 import type { FormattedMessage } from "./formatters";
 import { computeLayout, createBoxOptions } from "./layout";
 import { renderActionResultPanel } from "./panels/action-result";
 import { renderContextPanel } from "./panels/context";
+import { renderGameStatusPanel } from "./panels/game-status";
 // Panels
 import { LogPanel, type LogTab } from "./panels/log";
 import {
@@ -74,6 +79,7 @@ export interface TuiUpdateData {
 		maxShield?: number;
 	};
 	context?: TuiContext;
+	actionHistory?: ActionHistoryEntry[];
 }
 
 export class Tui {
@@ -86,6 +92,7 @@ export class Tui {
 
 	private logPanel: LogPanel;
 	private actionResultBox: blessed.Widgets.BoxElement;
+	private gameStatusBox: blessed.Widgets.BoxElement;
 
 	private tacticalBox: blessed.Widgets.BoxElement;
 	private contextBox: blessed.Widgets.BoxElement;
@@ -95,6 +102,10 @@ export class Tui {
 
 	private exitHandler: (() => void) | null = null;
 	private debugEnabled: boolean;
+
+	// Spinner animation
+	private spinnerFrame = 0;
+	private spinnerInterval: NodeJS.Timeout | null = null;
 
 	// Cached state for rendering
 	private state: TuiUpdateData = {};
@@ -139,9 +150,14 @@ export class Tui {
 		this.logPanel = new LogPanel(this.screen, layout.log);
 
 		this.actionResultBox = blessed.box(
-			createBoxOptions(layout.actionResult, " RESULT ", PALETTE.AMBER),
+			createBoxOptions(layout.actionResult, " ACTIONS ", PALETTE.AMBER),
 		);
 		this.screen.append(this.actionResultBox);
+
+		this.gameStatusBox = blessed.box(
+			createBoxOptions(layout.gameStatus, " ACTIVITY ", PALETTE.MOSS),
+		);
+		this.screen.append(this.gameStatusBox);
 
 		// -- RIGHT COLUMN --
 		this.tacticalBox = blessed.box(
@@ -213,6 +229,13 @@ export class Tui {
 			this.render();
 		});
 
+		// Start spinner animation (updates every 100ms)
+		this.spinnerInterval = setInterval(() => {
+			this.spinnerFrame = (this.spinnerFrame + 1) % 10;
+			this.updateGameStatusPanel();
+			this.screen.render();
+		}, 100);
+
 		this.render();
 	}
 
@@ -252,6 +275,8 @@ export class Tui {
 		if (data.combatTarget !== undefined)
 			this.state.combatTarget = data.combatTarget;
 		if (data.context !== undefined) this.state.context = data.context;
+		if (data.actionHistory !== undefined)
+			this.state.actionHistory = data.actionHistory;
 
 		this.updatePanels();
 		this.render();
@@ -268,7 +293,52 @@ export class Tui {
 		this.screen.render();
 	}
 
+	setGameStatus(activity: GameStatusType, details?: string): void {
+		// Update state for game status
+		if (!this.state.context) {
+			this.state.context = {};
+		}
+		// Store activity in a temporary field for rendering
+		(this.state as { currentActivity?: GameStatusType }).currentActivity =
+			activity;
+		(this.state as { activityDetails?: string | null }).activityDetails =
+			details ?? null;
+
+		this.updateGameStatusPanel();
+		this.screen.render();
+	}
+
+	private updateGameStatusPanel(): void {
+		const activity =
+			(this.state as { currentActivity?: GameStatusType }).currentActivity ||
+			"waiting_for_tick";
+		const details =
+			(this.state as { activityDetails?: string | null }).activityDetails ||
+			null;
+
+		// Get panel width for centering ASCII art
+		const panelWidth =
+			typeof this.gameStatusBox.width === "number"
+				? this.gameStatusBox.width
+				: 30; // Fallback
+
+		this.gameStatusBox.setContent(
+			renderGameStatusPanel(
+				{
+					activity,
+					details,
+					spinnerFrame: this.spinnerFrame,
+				},
+				panelWidth,
+			),
+		);
+	}
+
 	destroy(): void {
+		if (this.spinnerInterval) {
+			clearInterval(this.spinnerInterval);
+			this.spinnerInterval = null;
+		}
 		this.screen.destroy();
 	}
 
@@ -309,9 +379,18 @@ export class Tui {
 		};
 		this.navigationBox.setContent(renderNavigationPanel(navData));
 
-		// Action Result
-		const lastResult = this.state.context?.lastActionResult;
-		this.actionResultBox.setContent(renderActionResultPanel(lastResult));
+		// Action Result - pass history and panel width
+		const history = this.state.actionHistory ?? [];
+		const panelWidth =
+			typeof this.actionResultBox.width === "number"
+				? this.actionResultBox.width
+				: 50; // Fallback
+		this.actionResultBox.setContent(
+			renderActionResultPanel(history, panelWidth),
+		);
+
+		// Game Status
+		this.updateGameStatusPanel();
 
 		// Tactical Panel
 		const tacticalData: TacticalData = {
@@ -371,6 +450,7 @@ export class Tui {
 		// Center
 		this.logPanel.updateDimensions(layout.log);
 		this.updateBoxDims(this.actionResultBox, layout.actionResult);
+		this.updateBoxDims(this.gameStatusBox, layout.gameStatus);
 
 		// Right
 		this.updateBoxDims(this.tacticalBox, layout.tactical);

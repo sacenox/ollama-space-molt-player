@@ -78,3 +78,20 @@ export interface PersonalityArchetype {
 	emoji: string;
 	description: string;
 }
+
+export type GameStatusType =
+	| "waiting_for_tick"
+	| "requesting_action"
+	| "llm_thinking"
+	| "traveling"
+	| "jumping"
+	| "processing_result"
+	| "in_combat"
+	| "docked";
+
+export interface ActionHistoryEntry {
+	action: string;
+	result: string;
+	tick: number;
+	timestamp: number;
+}

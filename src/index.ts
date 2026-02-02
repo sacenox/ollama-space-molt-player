@@ -136,6 +136,7 @@ function updateOutput(): void {
 		mission: gameState.currentMission,
 		inCombat: gameState.inCombat,
 		context: gameState.tuiContext,
+		actionHistory: gameState.actionHistory,
 	});
 }
 
@@ -154,6 +155,8 @@ function captureActionResult(resultType: string, payload: unknown): void {
 			clearTimeout(gameState.pendingActionTimeout);
 			gameState.pendingActionTimeout = null;
 		}
+		// Push to action history when action completes
+		pushCurrentActionToHistory();
 	}
 	// For "ok", only clear if it's NOT a mine action (mine waits for mining_yield)
 	else if (resultType === "ok") {
@@ -164,6 +167,8 @@ function captureActionResult(resultType: string, payload: unknown): void {
 				clearTimeout(gameState.pendingActionTimeout);
 				gameState.pendingActionTimeout = null;
 			}
+			// Push to action history when action completes
+			pushCurrentActionToHistory();
 		}
 	}
 
@@ -171,6 +176,22 @@ function captureActionResult(resultType: string, payload: unknown): void {
 		"ACTION_RESULT_CAPTURED",
 		`${resultType} linked to action ${gameState.pendingActionId}`,
 	);
+}
+
+function pushCurrentActionToHistory(): void {
+	const lastActionFormatted = buildLastActionResult(memory, getCurrentTick());
+	if (lastActionFormatted && lastActionFormatted !== "No actions yet.") {
+		const lastAction = memory.getLastActionWithResults();
+		if (lastAction) {
+			gameState.pushActionHistory({
+				action: lastAction.action.action,
+				result: lastActionFormatted,
+				tick: getCurrentTick(),
+				timestamp: Date.now(),
+			});
+			updateOutput();
+		}
+	}
 }
 
 function shouldStopForMaxTicks(allowFallbackCount: boolean): boolean {
@@ -287,9 +308,25 @@ async function startActionLoop(): Promise<void> {
 		}
 		try {
 			if (inTransit) {
+				// Update status: traveling or jumping
+				if (gameState.travelInProgress && gameState.lastTravelTarget) {
+					gameState.currentActivity = "traveling";
+					gameState.activityDetails = gameState.lastTravelTarget;
+					output.setGameStatus("traveling", gameState.lastTravelTarget);
+				} else if (gameState.jumpInProgress && gameState.lastJumpTarget) {
+					gameState.currentActivity = "jumping";
+					gameState.activityDetails = gameState.lastJumpTarget;
+					output.setGameStatus("jumping", gameState.lastJumpTarget);
+				}
 				await sleep(config.tickDelayMs);
 				continue;
 			}
+
+			// Update status: requesting action from AI
+			gameState.currentActivity = "requesting_action";
+			gameState.activityDetails = null;
+			output.setGameStatus("requesting_action");
+
 			const recentHistory = memory.getRecentHistory(
 				config.maxContextActions,
 				config.maxContextEvents,
@@ -355,6 +392,10 @@ async function startActionLoop(): Promise<void> {
 
 			output.setPrompt(prompt);
 			output.logDebug("LLM_PROMPT", prompt);
+
+			// Update status: AI is thinking
+			gameState.currentActivity = "llm_thinking";
+			output.setGameStatus("llm_thinking");
 
 			const promptExcerpt = prompt.slice(0, 1000);
 			const result = await ollama.generateJson(prompt);
@@ -465,6 +506,10 @@ async function startActionLoop(): Promise<void> {
 				action: validation.action,
 			});
 
+			// Update status: processing result
+			gameState.currentActivity = "processing_result";
+			output.setGameStatus("processing_result");
+
 			if (actionName === "travel") {
 				client.getSystem();
 				client.getPOI();
@@ -486,6 +531,11 @@ async function startActionLoop(): Promise<void> {
 				memory.appendEvent(getCurrentTick(), "loop_error", { message });
 			}
 		}
+
+		// Update status: waiting for next tick
+		gameState.currentActivity = "waiting_for_tick";
+		gameState.activityDetails = null;
+		output.setGameStatus("waiting_for_tick");
 
 		await sleep(config.tickDelayMs);
 	}
@@ -775,6 +825,10 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 		gameState.cachedShip = data.ship;
 	}
 
+	// Track docked state changes
+	const wasDocked = gameState.lastDocked;
+	const isDocked = data.player ? Boolean(data.player.docked_at_base) : false;
+
 	if (data.player) {
 		refreshSnapshotForLocation(data.player);
 
@@ -799,11 +853,51 @@ client.on<StateUpdatePayload>("state_update", async (data) => {
 	const wasInCombat = gameState.inCombat;
 	gameState.inCombat = data.in_combat ?? false;
 
-	// Log combat state changes
+	// Log combat state changes and update status
 	if (gameState.inCombat && !wasInCombat) {
 		output.log(formatSystemMessage("COMBAT STARTED", getCurrentTick()));
+		const combatTarget = data.nearby?.find(
+			(n) => n.player_id === data.target_id,
+		);
+		const targetName = combatTarget?.username || data.target_id || "unknown";
+		gameState.currentActivity = "in_combat";
+		gameState.activityDetails = targetName;
+		output.setGameStatus("in_combat", targetName);
 	} else if (!gameState.inCombat && wasInCombat) {
 		output.log(formatSystemMessage("Combat ended", getCurrentTick()));
+		// Reset to appropriate state after combat
+		if (data.player?.docked_at_base) {
+			gameState.currentActivity = "docked";
+			gameState.activityDetails = data.player.current_poi || null;
+			output.setGameStatus("docked", data.player.current_poi || undefined);
+		} else {
+			gameState.currentActivity = "waiting_for_tick";
+			gameState.activityDetails = null;
+			output.setGameStatus("waiting_for_tick");
+		}
+	} else if (gameState.inCombat && data.nearby) {
+		// Update combat target name if it changed
+		const combatTarget = data.nearby.find(
+			(n) => n.player_id === data.target_id,
+		);
+		const targetName = combatTarget?.username || data.target_id || "unknown";
+		if (targetName !== gameState.activityDetails) {
+			gameState.activityDetails = targetName;
+			output.setGameStatus("in_combat", targetName);
+		}
+	}
+
+	// Update docked status if changed and not in combat
+	if (!gameState.inCombat) {
+		if (isDocked && !wasDocked && data.player?.current_poi) {
+			gameState.currentActivity = "docked";
+			gameState.activityDetails = data.player.current_poi;
+			output.setGameStatus("docked", data.player.current_poi);
+		} else if (!isDocked && wasDocked) {
+			gameState.currentActivity = "waiting_for_tick";
+			gameState.activityDetails = null;
+			output.setGameStatus("waiting_for_tick");
+		}
 	}
 
 	updateOutput();

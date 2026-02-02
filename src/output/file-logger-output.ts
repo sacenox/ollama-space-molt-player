@@ -54,6 +54,13 @@ export class FileLoggerOutput implements OutputInterface {
 		// No-op in non-interactive mode.
 	}
 
+	setGameStatus(
+		_activity: import("../types").GameStatusType,
+		_details?: string,
+	): void {
+		// No-op in non-interactive mode.
+	}
+
 	setPrompt(content: string): void {
 		this.logDebug("PROMPT", content);
 	}

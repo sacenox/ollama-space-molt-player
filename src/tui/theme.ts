@@ -58,4 +58,52 @@ export const SYMBOLS = {
 	// Status
 	CHECK: "√",
 	CROSS: "×",
+
+	// Enhanced status indicators
+	SUCCESS: "✓",
+	ERROR: "✗",
+	INFO: "•",
+	WARNING: "!",
+
+	// Spinner frames (Braille patterns)
+	SPINNER_FRAMES: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+
+	// Action type decorators
+	NAV_BLOCK: "═",
+	RESOURCE_BLOCK: "▓",
+	COMBAT_BLOCK: "█",
+	INFO_BLOCK: "─",
+} as const;
+
+// ASCII art for activity states (4-5 lines each)
+// All lines normalized to exactly 12 characters for consistent box width
+export const ACTIVITY_ART = {
+	waiting_for_tick: [
+		"   ╭─────╮  ",
+		"   │ . . │  ",
+		"   │  ─  │  ",
+		"   ╰zzZ──╯  ",
+	],
+	requesting_action: [
+		"   [?AI?]   ",
+		"   ╱ ◉ ◉╲   ",
+		"  │ ▼▼▼ │   ",
+		"   ╲___╱    ",
+	],
+	llm_thinking: [
+		"   ◉ ◎ ◉    ",
+		"  ╱ ⚙ ⚙ ╲   ",
+		" │ ⊕ ∞ ⊗ │  ",
+		"  ╲ ⚙ ⚙ ╱   ",
+	],
+	traveling: ["    ═══►    ", "   ───►     ", "  ──►       ", " ─►         "],
+	jumping: [" * ═══► *   ", "  * ══►     ", "   *═►      ", " *   ─►     "],
+	processing_result: [
+		"            ",
+		" ▓▓▓▓▓░░░░░ ",
+		"  89% ...   ",
+		"            ",
+	],
+	in_combat: ["  ╳  ▓▓▓  ╳ ", " ▓▓  ███ ▓▓ ", "  ╳  ▓▓▓  ╳ ", "  ⚠  ALERT  "],
+	docked: [" ┌──┐       ", " │▓▓│═══╣▓  ", " │▓▓│   ║   ", " └──┘═══╝   "],
 } as const;
