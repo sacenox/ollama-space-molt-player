@@ -297,6 +297,7 @@ export class Tui {
 			system: this.state.system ?? null,
 			poi: this.state.poi ?? null,
 			base: this.state.base ?? null,
+			pois: this.state.pois ?? [],
 			traveling: this.state.traveling ?? false,
 			travelTarget: this.state.travelTarget ?? null,
 			jumping: this.state.jumping ?? false,
