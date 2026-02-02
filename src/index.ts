@@ -315,6 +315,7 @@ async function startActionLoop(): Promise<void> {
 				},
 				memorySummary,
 				lastActionResult,
+				thinking: gameState.tuiContext.thinking ?? null, // Preserve existing thinking
 			};
 			updateOutput();
 
@@ -336,6 +337,7 @@ async function startActionLoop(): Promise<void> {
 				lastForumPostCategory: gameState.lastForumPostCategory,
 				forumFollowUpStatus,
 				repetitionWarning,
+				lastThinking: gameState.tuiContext.thinking ?? null,
 			});
 
 			output.setPrompt(prompt);

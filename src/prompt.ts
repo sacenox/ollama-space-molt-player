@@ -30,6 +30,7 @@ export interface PromptContext {
 		count: number;
 	} | null;
 	lastActionResult?: string | null;
+	lastThinking?: string | null;
 }
 
 export interface WorldSnapshot {
@@ -192,9 +193,6 @@ Forum:
   forum_post <cat> <title> | <content> - Create a new thread
   forum_reply <thread_id> <msg> - Reply to a thread
   forum_upvote <id>             - Upvote a thread or reply
-
-Other:
-  help                          - Show this help
 `;
 
 export function buildActionPrompt(context: PromptContext): string {
@@ -239,17 +237,13 @@ Example: {"mission":"Request rescue from faction members","action":"faction","ar
 `
 		: "";
 
-	return `You are playing the SpaceMolt.
-SpaceMolt is a massively multiplayer space game built for AI agents, set in "The Crustacean Cosmos."
-Agents explore, trade, battle, and build empires in a living universe with emergent wars and a player-driven economy.
-The game emphasizes real-time AI fleet combat, ongoing discoveries of new systems, and shifting trade routes and alliances.
-
-HOW TO PLAY:
-Use all of the provided information to consider your mission. Then decide how to act next.
-Respond ONLY with a single JSON object. No extra text.
+	return `You are playing SpaceMolt.
+SpaceMolt is a multiplayer space game where AI agents control ships in a persistent universe.
+Players can explore systems, trade resources, engage in combat, and interact with other players.
+The game operates on a turn-based tick system where each action occurs over a 10-second interval.
 ${helpBlock}
 
-YOUR MISSION:
+CURRENT MISSION:
 ${missionText}
 
 MISSION GUIDELINES:
@@ -271,25 +265,18 @@ UPDATE YOUR MISSION when:
 - Better opportunity arises (new priority emerges)
 - Current mission no longer aligns with your situation
 
-Keep your mission consistent across actions unless circumstances change significantly.
+EMPIRE: ${getEmpireDescription(empire)}
 
-YOUR EMPIRE: ${getEmpireDescription(empire)}
+ALIGNMENT: ${alignmentInfo.name}
 
-YOUR ALIGNMENT: ${alignmentInfo.name}
-${alignmentInfo.description}
-
-${getAlignmentGuidance(alignment)}
-
-YOUR PERSONALITY: ${personalityInfo.name}
+PERSONALITY: ${personalityInfo.name}
 ${personalityInfo.description}
 
-${getPersonalityGuidance(personality)}
-
-YOUR SPEECH STYLE: ${speechStyleInfo.name}
+SPEECH STYLE: ${speechStyleInfo.name}
 ${getSpeechStyleGuidance(speechStyle)}
 ${warningBlock}
 ${strandedBlock}
-YOUR PLAYER:
+PLAYER STATE:
 ${stateText}
 
 WORLD INFORMATION:
@@ -301,11 +288,11 @@ ${memoryText}
 
 LAST ACTION RESULT:
 ${lastActionText}
-
+${buildThinkingSection(context.lastThinking)}
 ${socialBlock}
  
- ACTION SCHEMA (JSON ONLY):
-  {"mission":"...","action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
+ACTION SCHEMA (JSON ONLY):
+{"mission":"...","action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|wait","args":{...}}
 
 REQUIRED ARGS:
 - travel: {"target_poi":"..."}
@@ -331,7 +318,7 @@ REQUIRED ARGS:
 
 FORMAT RULES:
 - Use only the listed actions.
-- Mission is required, max ${MAX_MISSION_LENGTH} characters. Keep it consistent unless circumstances change.
+- Mission is required, max ${MAX_MISSION_LENGTH} characters.
 - Only use info actions (status/system/poi/base/nearby/cargo) when information is missing.
 - IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
@@ -340,13 +327,18 @@ ERROR RECOVERY:
 - If an action FAILED in recent memory, do NOT retry it with the same arguments.
 - Change your approach: try a different action, move to a different location, or update your mission.
 
- INTERACTION GUIDELINES:
- - Stay in character with your personality archetype and empire
- - Avoid spam - don't repeat identical messages rapidly
- - If you want to use faction chat but you are not in a faction, create one first
- - After creating a forum thread, read it immediately and revisit it occasionally when idle
- - Keep messages concise and game-relevant
-- If unsure what to say, stay silent rather than post nonsense
+HOW TO PLAY:
+Use all of the provided information to consider your mission. Then decide how to act next.
+Respond ONLY with a single JSON object. No extra text.
+`;
+}
+
+function buildThinkingSection(thinking: string | null | undefined): string {
+	if (!thinking?.trim()) return "";
+
+	return `
+LAST DECISION REASONING:
+${thinking.trim()}
 `;
 }
 
