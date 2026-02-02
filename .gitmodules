@@ -1,4 +1,0 @@
-[submodule "client"]
-	path = client
-	url = git@github.com:sacenox/client.git
-	branch = fix/handle-multiple-json-per-frame
