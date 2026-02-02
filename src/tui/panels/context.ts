@@ -1,89 +1,46 @@
 // Context panel - warnings, memory summary, and forum status
 
-import { applyBold, applyColor, COLORS } from "../colors";
 import type { TuiContext } from "../index";
+import { PALETTE, THEME } from "../theme";
+import { applyColor, renderSectionTitle } from "../widgets";
 
 export function renderContextPanel(context: TuiContext | undefined): string {
 	const lines: string[] = [];
 
 	// Warnings section
-	lines.push(applyColor(applyBold("== Warnings =="), COLORS.PANEL_TITLE));
-
 	const warnings = context?.warnings;
-	let hasWarnings = false;
-
-	if (warnings?.stranded) {
-		lines.push(applyColor("STRANDED: No fuel, no base", COLORS.STATUS_DANGER));
-		hasWarnings = true;
+	if (warnings?.stranded || warnings?.repetition) {
+		lines.push(renderSectionTitle("ALERTS"));
+		if (warnings?.stranded) {
+			lines.push(applyColor("!! STRANDED !!", PALETTE.BRICK));
+			lines.push("No fuel, no base nearby.");
+		}
+		if (warnings?.repetition) {
+			lines.push(applyColor("!! REPETITION DETECTED !!", PALETTE.AMBER));
+			lines.push(
+				`Action "${warnings.repetition.action}" repeated x${warnings.repetition.count}`,
+			);
+		}
+		lines.push("");
 	}
 
-	if (warnings?.repetition) {
-		lines.push(
-			applyColor(
-				`REPETITION: "${warnings.repetition.action}" x${warnings.repetition.count}`,
-				COLORS.STATUS_WARNING,
-			),
-		);
-		hasWarnings = true;
+	// Forum status
+	const forum = context?.forum;
+	if (forum?.followUpStatus === "unread") {
+		lines.push(renderSectionTitle("COMMUNICATIONS"));
+		lines.push(applyColor(" [!] Unread Forum Reply", PALETTE.AMBER));
+		if (forum.lastThreadId) lines.push(` Thread: ${forum.lastThreadId}`);
+		lines.push("");
 	}
-
-	if (!hasWarnings) {
-		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
-	}
-
-	lines.push("");
 
 	// Memory summary section
-	lines.push(applyColor(applyBold("== Memory =="), COLORS.PANEL_TITLE));
+	lines.push(renderSectionTitle("SHORT-TERM MEMORY"));
 	const memorySummary = context?.memorySummary?.trim();
 	if (memorySummary) {
-		lines.push(...memorySummary.split("\n"));
+		// Just output the text, let blessed wrap it
+		lines.push(applyColor(memorySummary, THEME.VALUE));
 	} else {
-		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
-	}
-
-	lines.push("");
-
-	// Last action result section
-	lines.push(
-		applyColor(applyBold("== Last Action Result =="), COLORS.PANEL_TITLE),
-	);
-	const lastActionResult = context?.lastActionResult?.trim();
-	if (lastActionResult) {
-		lines.push(...lastActionResult.split("\n"));
-	} else {
-		lines.push(applyColor("None", COLORS.STATUS_INACTIVE));
-	}
-
-	lines.push("");
-
-	// Forum section
-	lines.push(applyColor(applyBold("== Forum =="), COLORS.PANEL_TITLE));
-
-	const forum = context?.forum;
-	const status = forum?.followUpStatus ?? null;
-	const threadId = forum?.lastThreadId ?? null;
-	const title = forum?.lastPostTitle ?? null;
-	const category = forum?.lastPostCategory ?? null;
-
-	if (status === "unread") {
-		lines.push(applyColor("NEW THREAD - read now", COLORS.STATUS_WARNING));
-	} else if (status === "periodic") {
-		lines.push(applyColor("Active thread", COLORS.STATUS_SAFE));
-	} else {
-		lines.push(applyColor("No active thread", COLORS.STATUS_INACTIVE));
-	}
-
-	if (threadId) {
-		lines.push(`Thread: ${threadId}`);
-	} else if (title || category) {
-		if (category && title) {
-			lines.push(`[${category}] ${title}`);
-		} else if (title) {
-			lines.push(`Title: ${title}`);
-		} else if (category) {
-			lines.push(`Category: ${category}`);
-		}
+		lines.push(applyColor("No memory available.", THEME.INACTIVE));
 	}
 
 	return lines.join("\n");

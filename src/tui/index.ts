@@ -4,18 +4,21 @@ import blessed from "blessed";
 import type { Base, Player, POI, Ship, System } from "../../client/src/types";
 import type { PersonalityType } from "../actions";
 import type { AlignmentType } from "../types";
-import { applyColor, COLORS, THRESHOLDS } from "./colors";
 import type { FormattedMessage } from "./formatters";
 import { computeLayout, createBoxOptions } from "./layout";
+import { renderActionResultPanel } from "./panels/action-result";
 import { renderContextPanel } from "./panels/context";
-import { type LocationData, renderLocationPanel } from "./panels/location";
+// Panels
 import { LogPanel, type LogTab } from "./panels/log";
 import {
-	type PlayerShipData,
-	renderPlayerShipPanel,
-} from "./panels/player-ship";
+	type NavigationData,
+	renderNavigationPanel,
+} from "./panels/navigation";
+import { type PlayerData, renderPlayerPanel } from "./panels/player";
+import { renderShipPanel, type ShipData } from "./panels/ship";
 import { renderTacticalPanel, type TacticalData } from "./panels/tactical";
-import { renderWorldInfoPanel, type WorldInfoData } from "./panels/world-info";
+import { PALETTE, THEME } from "./theme";
+import { applyColor } from "./widgets";
 
 export interface ContextWarnings {
 	repetition?: {
@@ -46,7 +49,12 @@ export interface TuiUpdateData {
 	poi?: POI | null;
 	base?: Base | null;
 	pois?: Array<{ id: string; name: string; type?: string }>;
-	nearby?: Array<{ player_id?: string; username?: string }>;
+	nearby?: Array<{
+		player_id?: string;
+		username?: string;
+		ship_class?: string;
+		faction_tag?: string;
+	}>;
 	alignment?: AlignmentType;
 	personality?: PersonalityType;
 	tick?: number;
@@ -69,14 +77,21 @@ export interface TuiUpdateData {
 
 export class Tui {
 	private screen: blessed.Widgets.Screen;
-	private playerShipBox: blessed.Widgets.BoxElement;
-	private worldInfoBox: blessed.Widgets.BoxElement;
+
+	// Panel Boxes
+	private playerBox: blessed.Widgets.BoxElement;
+	private shipBox: blessed.Widgets.BoxElement;
+	private navigationBox: blessed.Widgets.BoxElement;
+
 	private logPanel: LogPanel;
-	private locationBox: blessed.Widgets.BoxElement;
+	private actionResultBox: blessed.Widgets.BoxElement;
+
 	private tacticalBox: blessed.Widgets.BoxElement;
 	private contextBox: blessed.Widgets.BoxElement;
+
 	private statusBar: blessed.Widgets.BoxElement;
 	private debugBox: blessed.Widgets.BoxElement | null;
+
 	private exitHandler: (() => void) | null = null;
 	private debugEnabled: boolean;
 
@@ -88,7 +103,7 @@ export class Tui {
 		this.screen = blessed.screen({
 			smartCSR: true,
 			title: "SpaceMolt Ollama Player",
-			fullUnicode: false,
+			fullUnicode: true, // Enabled for symbols
 			terminal: resolveTerminal(),
 		});
 
@@ -103,50 +118,42 @@ export class Tui {
 
 		const layout = computeLayout(termWidth, termHeight);
 
-		// Create panels
-		this.playerShipBox = blessed.box(
-			createBoxOptions(
-				layout.playerShip,
-				"Player/Ship",
-				COLORS.PANEL_BORDER_INACTIVE,
-			),
+		// -- LEFT COLUMN --
+		this.playerBox = blessed.box(
+			createBoxOptions(layout.player, " PLAYER ", THEME.BORDER_INACTIVE),
 		);
-		this.screen.append(this.playerShipBox);
+		this.screen.append(this.playerBox);
 
-		this.worldInfoBox = blessed.box(
-			createBoxOptions(
-				layout.worldInfo,
-				"World Info",
-				COLORS.PANEL_BORDER_INACTIVE,
-			),
+		this.shipBox = blessed.box(
+			createBoxOptions(layout.ship, " SHIP ", THEME.BORDER_INACTIVE),
 		);
-		this.screen.append(this.worldInfoBox);
+		this.screen.append(this.shipBox);
 
+		this.navigationBox = blessed.box(
+			createBoxOptions(layout.navigation, " NAV ", THEME.BORDER_INACTIVE),
+		);
+		this.screen.append(this.navigationBox);
+
+		// -- CENTER COLUMN --
 		this.logPanel = new LogPanel(this.screen, layout.log);
 
-		this.locationBox = blessed.box(
-			createBoxOptions(
-				layout.location,
-				"Location",
-				COLORS.PANEL_BORDER_INACTIVE,
-			),
+		this.actionResultBox = blessed.box(
+			createBoxOptions(layout.actionResult, " RESULT ", PALETTE.AMBER),
 		);
-		this.screen.append(this.locationBox);
+		this.screen.append(this.actionResultBox);
 
+		// -- RIGHT COLUMN --
 		this.tacticalBox = blessed.box(
-			createBoxOptions(
-				layout.tactical,
-				"Tactical",
-				COLORS.PANEL_BORDER_INACTIVE,
-			),
+			createBoxOptions(layout.tactical, " TACTICAL ", THEME.BORDER_INACTIVE),
 		);
 		this.screen.append(this.tacticalBox);
 
 		this.contextBox = blessed.box(
-			createBoxOptions(layout.context, "Context", COLORS.PANEL_BORDER_INACTIVE),
+			createBoxOptions(layout.context, " CONTEXT ", THEME.BORDER_INACTIVE),
 		);
 		this.screen.append(this.contextBox);
 
+		// -- STATUS BAR --
 		this.statusBar = blessed.box({
 			parent: this.screen,
 			bottom: 0,
@@ -155,13 +162,13 @@ export class Tui {
 			height: 1,
 			tags: true,
 			style: {
-				bg: "black",
-				fg: "cyan",
+				bg: PALETTE.BLACK,
+				fg: PALETTE.WHITE,
 			},
-			content: "Starting...",
+			content: "Initializing...",
 		});
 
-		// Debug panel (optional) - positioned right of main layout
+		// Debug panel (optional)
 		this.debugBox = this.debugEnabled
 			? blessed.box({
 					parent: this.screen,
@@ -171,20 +178,14 @@ export class Tui {
 					height: "100%-1",
 					tags: false,
 					border: "line",
-					label: "Debug Prompt",
+					label: "Debug",
 					style: {
-						border: {
-							fg: "blue",
-						},
+						border: { fg: "blue" },
 						bg: "black",
 						fg: "white",
 					},
 					scrollable: true,
 					alwaysScroll: false,
-					scrollbar: {
-						ch: " ",
-						inverse: true,
-					},
 					content: "No prompt yet",
 				})
 			: null;
@@ -225,8 +226,6 @@ export class Tui {
 
 	update(data: TuiUpdateData): void {
 		// Merge new data into state
-		// Note: player/ship skip null to preserve data when events don't include them
-		// Other fields allow null since they can legitimately be cleared (e.g., undocking clears base)
 		if (data.player !== undefined && data.player !== null)
 			this.state.player = data.player;
 		if (data.ship !== undefined && data.ship !== null)
@@ -256,7 +255,7 @@ export class Tui {
 	}
 
 	setStatus(text: string): void {
-		this.statusBar.setContent(applyColor(text, COLORS.PANEL_VALUE));
+		this.statusBar.setContent(applyColor(text, THEME.VALUE));
 		this.screen.render();
 	}
 
@@ -276,36 +275,40 @@ export class Tui {
 	}
 
 	private updatePanels(): void {
-		// Player/Ship panel
-		const playerShipData: PlayerShipData = {
+		// Player Panel
+		const playerData: PlayerData = {
 			player: this.state.player ?? null,
-			ship: this.state.ship ?? null,
 			alignment: this.state.alignment,
 			personality: this.state.personality,
 			tick: this.state.tick ?? 0,
+			currentMission: this.state.mission ?? null,
 		};
-		this.playerShipBox.setContent(renderPlayerShipPanel(playerShipData));
+		this.playerBox.setContent(renderPlayerPanel(playerData));
 
-		// World Info panel
-		const worldInfoData: WorldInfoData = {
-			base: this.state.base ?? null,
+		// Ship Panel
+		const shipData: ShipData = {
+			ship: this.state.ship ?? null,
 		};
-		this.worldInfoBox.setContent(renderWorldInfoPanel(worldInfoData));
+		this.shipBox.setContent(renderShipPanel(shipData));
 
-		// Location panel
-		const locationData: LocationData = {
+		// Navigation Panel
+		const navData: NavigationData = {
 			player: this.state.player ?? null,
 			system: this.state.system ?? null,
 			poi: this.state.poi ?? null,
-			pois: this.state.pois ?? [],
+			base: this.state.base ?? null,
 			traveling: this.state.traveling ?? false,
 			travelTarget: this.state.travelTarget ?? null,
 			jumping: this.state.jumping ?? false,
 			jumpTarget: this.state.jumpTarget ?? null,
 		};
-		this.locationBox.setContent(renderLocationPanel(locationData));
+		this.navigationBox.setContent(renderNavigationPanel(navData));
 
-		// Tactical panel
+		// Action Result
+		const lastResult = this.state.context?.lastActionResult;
+		this.actionResultBox.setContent(renderActionResultPanel(lastResult));
+
+		// Tactical Panel
 		const tacticalData: TacticalData = {
 			inCombat: this.state.inCombat ?? false,
 			combatTarget: this.state.combatTarget,
@@ -313,58 +316,34 @@ export class Tui {
 		};
 		this.tacticalBox.setContent(renderTacticalPanel(tacticalData));
 
-		// Context panel
+		// Update Border Color based on threat
+		if (this.state.inCombat) {
+			this.tacticalBox.style.border.fg = PALETTE.BRICK;
+		} else {
+			this.tacticalBox.style.border.fg = THEME.BORDER_INACTIVE;
+		}
+
+		// Context Panel
 		this.contextBox.setContent(renderContextPanel(this.state.context));
 
-		// Status bar
+		// Status Bar
 		this.updateStatusBar();
 	}
 
 	private updateStatusBar(): void {
 		const parts: string[] = [];
+		const tick = this.state.tick ?? 0;
 
-		// Current status
+		parts.push(applyColor(`Tick: ${tick}`, PALETTE.GRAY));
+
 		if (this.state.inCombat) {
-			parts.push(applyColor("COMBAT", COLORS.STATUS_DANGER));
-		} else if (this.state.jumping) {
-			const target = this.state.jumpTarget ?? "unknown";
-			parts.push(`Jumping to ${target}`);
-		} else if (this.state.traveling) {
-			const target = this.state.travelTarget ?? "unknown";
-			parts.push(`Traveling to ${target}`);
-		} else if (this.state.player?.docked_at_base) {
-			parts.push("Docked");
-		} else if (this.state.poi?.name) {
-			parts.push(`At ${this.state.poi.name}`);
+			parts.push(applyColor("!!! COMBAT !!!", PALETTE.BRICK));
 		}
 
-		// Mission
-		if (this.state.mission) {
-			parts.push(`Mission: ${this.state.mission}`);
-		}
+		// Hints
+		parts.push(applyColor("Tabs: 1-6 | Exit: q", THEME.INACTIVE));
 
-		// Tick
-		if (this.state.tick !== undefined) {
-			parts.push(`Tick: ${this.state.tick}`);
-		}
-
-		// Fuel warning
-		if (this.state.ship) {
-			const fuelPct = (this.state.ship.fuel / this.state.ship.max_fuel) * 100;
-			if (fuelPct < THRESHOLDS.FUEL_LOW) {
-				parts.push(
-					applyColor(
-						`LOW FUEL (${Math.round(fuelPct)}%)`,
-						COLORS.STATUS_DANGER,
-					),
-				);
-			}
-		}
-
-		// Controls hint
-		parts.push("Press 'q' to quit");
-
-		this.statusBar.setContent(parts.join(" | "));
+		this.statusBar.setContent(parts.join("  |  "));
 	}
 
 	private applyLayout(): void {
@@ -379,43 +358,44 @@ export class Tui {
 
 		const layout = computeLayout(termWidth, termHeight);
 
-		// Update panel dimensions
-		this.playerShipBox.left = layout.playerShip.left;
-		this.playerShipBox.top = layout.playerShip.top;
-		this.playerShipBox.width = layout.playerShip.width;
-		this.playerShipBox.height = layout.playerShip.height;
+		// Left
+		this.updateBoxDims(this.playerBox, layout.player);
+		this.updateBoxDims(this.shipBox, layout.ship);
+		this.updateBoxDims(this.navigationBox, layout.navigation);
 
-		this.worldInfoBox.left = layout.worldInfo.left;
-		this.worldInfoBox.top = layout.worldInfo.top;
-		this.worldInfoBox.width = layout.worldInfo.width;
-		this.worldInfoBox.height = layout.worldInfo.height;
-
+		// Center
 		this.logPanel.updateDimensions(layout.log);
+		this.updateBoxDims(this.actionResultBox, layout.actionResult);
 
-		this.locationBox.left = layout.location.left;
-		this.locationBox.top = layout.location.top;
-		this.locationBox.width = layout.location.width;
-		this.locationBox.height = layout.location.height;
+		// Right
+		this.updateBoxDims(this.tacticalBox, layout.tactical);
+		this.updateBoxDims(this.contextBox, layout.context);
 
-		this.tacticalBox.left = layout.tactical.left;
-		this.tacticalBox.top = layout.tactical.top;
-		this.tacticalBox.width = layout.tactical.width;
-		this.tacticalBox.height = layout.tactical.height;
-
-		this.contextBox.left = layout.context.left;
-		this.contextBox.top = layout.context.top;
-		this.contextBox.width = layout.context.width;
-		this.contextBox.height = layout.context.height;
-
+		// Bottom
 		this.statusBar.top = layout.statusBar.top;
 		this.statusBar.width = layout.statusBar.width;
 
-		// Debug panel - positioned off-screen by default, can be toggled
+		// Debug panel - offscreen by default
 		if (this.debugBox) {
 			const debugWidth = Math.floor(termWidth * 0.3);
 			this.debugBox.left = termWidth - debugWidth;
 			this.debugBox.width = debugWidth;
 		}
+	}
+
+	private updateBoxDims(
+		box: blessed.Widgets.BoxElement,
+		dims: {
+			left: number;
+			top: number;
+			width: number | string;
+			height: number | string;
+		},
+	) {
+		box.left = dims.left;
+		box.top = dims.top;
+		box.width = dims.width;
+		box.height = dims.height;
 	}
 
 	private render(): void {

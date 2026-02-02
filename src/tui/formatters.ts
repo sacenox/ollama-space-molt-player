@@ -8,7 +8,8 @@ import type {
 	ScanResultPayload,
 	WelcomePayload,
 } from "../../client/src/types";
-import { applyColor, COLORS } from "./colors";
+import { PALETTE, THEME } from "./theme";
+import { applyColor } from "./widgets";
 
 export type LogCategory = "game" | "ai" | "combat" | "chat" | "system";
 
@@ -43,7 +44,8 @@ function formatWithTimestamp(
 	tick?: number,
 ): FormattedMessage {
 	const timestamp = getTimestamp(tick);
-	const ts = applyColor(timestamp, COLORS.MSG_TIMESTAMP);
+	// Dim timestamp
+	const ts = applyColor(timestamp, PALETTE.GRAY);
 	return {
 		text: `${ts} ${message}`,
 		category,
@@ -59,13 +61,13 @@ export function formatWelcome(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Connected to SpaceMolt v${data.version} (tick rate: ${data.tick_rate}s)`,
-		COLORS.MSG_SUCCESS,
+		THEME.MSG_SYSTEM,
 	);
 	return formatWithTimestamp(msg, "system", tick);
 }
 
 export function formatMotd(motd: string, tick?: number): FormattedMessage {
-	const msg = applyColor(`MOTD: ${motd}`, COLORS.MSG_CHAT);
+	const msg = applyColor(`MOTD: ${motd}`, THEME.MSG_GAME);
 	return formatWithTimestamp(msg, "system", tick);
 }
 
@@ -76,7 +78,7 @@ export function formatRegistered(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Registration successful - credentials saved`,
-		COLORS.MSG_SUCCESS,
+		THEME.SAFE,
 	);
 	return formatWithTimestamp(msg, "system", tick);
 }
@@ -88,7 +90,7 @@ export function formatLoggedIn(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Logged in as ${data.player.username} (${data.player.empire})`,
-		COLORS.MSG_SUCCESS,
+		THEME.SAFE,
 	);
 	return formatWithTimestamp(msg, "game", tick);
 }
@@ -100,7 +102,7 @@ export function formatError(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Error [${data.code}]: ${data.message}`,
-		COLORS.MSG_ERROR,
+		THEME.MSG_ERROR,
 	);
 	return formatWithTimestamp(msg, "system", tick);
 }
@@ -110,10 +112,12 @@ export function formatChatMessage(
 	data: ChatMessage,
 	tick?: number,
 ): FormattedMessage {
-	const msg = applyColor(
-		`[${data.channel}] ${data.sender}: ${data.content}`,
-		COLORS.MSG_CHAT,
-	);
+	const channelColor =
+		data.channel === "global" ? PALETTE.ORANGE : PALETTE.WHITE;
+	const content = applyColor(data.content, channelColor);
+	const sender = applyColor(data.sender, PALETTE.AMBER);
+
+	const msg = `[${data.channel}] ${sender}: ${content}`;
 	return formatWithTimestamp(msg, "chat", tick);
 }
 
@@ -143,7 +147,7 @@ export function formatScanResult(
 		}
 	}
 
-	const msg = `Scan result: ${parts.join(", ")}`;
+	const msg = applyColor(`Scan result: ${parts.join(", ")}`, PALETTE.MOSS);
 	return formatWithTimestamp(msg, "game", tick);
 }
 
@@ -154,7 +158,7 @@ export function formatMiningYield(
 ): FormattedMessage {
 	const resource = String(data.resource_id ?? "ore");
 	const quantity = Number(data.quantity ?? 0);
-	const msg = applyColor(`Mined ${quantity}x ${resource}`, COLORS.MSG_SUCCESS);
+	const msg = applyColor(`Mined ${quantity}x ${resource}`, THEME.MSG_PLAYER);
 	return formatWithTimestamp(msg, "game", tick);
 }
 
@@ -165,19 +169,25 @@ export function formatOk(
 	tick?: number,
 ): FormattedMessage {
 	const action = String(data.action ?? "");
+	let color = THEME.MSG_GAME;
+
+	// Highlight player successful actions
+	if (["mine", "travel", "jump", "dock", "buy", "sell"].includes(action)) {
+		color = THEME.MSG_PLAYER;
+	}
 
 	switch (action) {
 		case "travel": {
 			const targetId = String(
 				data.target_poi ?? context?.travelTarget ?? "unknown",
 			);
-			const msg = applyColor(`Traveling to ${targetId}`, COLORS.MSG_SUCCESS);
+			const msg = applyColor(`Traveling to ${targetId}`, color);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "arrived": {
 			const poiId = String(data.poi_id ?? "destination");
-			const msg = applyColor(`Arrived at ${poiId}`, COLORS.MSG_SUCCESS);
+			const msg = applyColor(`Arrived at ${poiId}`, THEME.SAFE);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
@@ -185,35 +195,29 @@ export function formatOk(
 			const targetSystem = String(
 				data.target_system ?? context?.jumpTarget ?? "unknown",
 			);
-			const msg = applyColor(
-				`Jumping to ${targetSystem} system`,
-				COLORS.MSG_SUCCESS,
-			);
+			const msg = applyColor(`Jumping to ${targetSystem} system`, color);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "jumped": {
 			const systemId = String(data.system_id ?? "new system");
-			const msg = applyColor(
-				`Jumped to ${systemId} system`,
-				COLORS.MSG_SUCCESS,
-			);
+			const msg = applyColor(`Jumped to ${systemId} system`, THEME.SAFE);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "dock": {
 			const baseId = String(data.base_id ?? "base");
-			const msg = applyColor(`Docked at ${baseId}`, COLORS.MSG_SUCCESS);
+			const msg = applyColor(`Docked at ${baseId}`, THEME.SAFE);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "undock": {
-			const msg = applyColor("Undocked from base", COLORS.MSG_SUCCESS);
+			const msg = applyColor("Undocked from base", color);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
 		case "mine": {
-			const msg = applyColor("Mining...", COLORS.MSG_INFO);
+			const msg = applyColor("Mining...", color);
 			return formatWithTimestamp(msg, "game", tick);
 		}
 
@@ -223,7 +227,7 @@ export function formatOk(
 			const cost = Number(data.cost ?? 0);
 			const msg = applyColor(
 				`Bought ${quantity}x ${itemId} for ${cost} credits`,
-				COLORS.MSG_SUCCESS,
+				color,
 			);
 			return formatWithTimestamp(msg, "game", tick);
 		}
@@ -234,7 +238,7 @@ export function formatOk(
 			const revenue = Number(data.revenue ?? 0);
 			const msg = applyColor(
 				`Sold ${quantity}x ${itemId} for ${revenue} credits`,
-				COLORS.MSG_SUCCESS,
+				color,
 			);
 			return formatWithTimestamp(msg, "game", tick);
 		}
@@ -243,7 +247,7 @@ export function formatOk(
 			const cost = Number(data.cost ?? 0);
 			const msg = applyColor(
 				`Repaired ship (cost: ${cost} credits)`,
-				COLORS.MSG_SUCCESS,
+				THEME.SAFE,
 			);
 			return formatWithTimestamp(msg, "game", tick);
 		}
@@ -252,7 +256,7 @@ export function formatOk(
 			const cost = Number(data.cost ?? 0);
 			const msg = applyColor(
 				`Refueled ship (cost: ${cost} credits)`,
-				COLORS.MSG_SUCCESS,
+				THEME.SAFE,
 			);
 			return formatWithTimestamp(msg, "game", tick);
 		}
@@ -262,7 +266,7 @@ export function formatOk(
 			const damage = Number(data.damage ?? 0);
 			const msg = applyColor(
 				`Attacked ${targetId}${damage > 0 ? ` (${damage} damage)` : ""}`,
-				COLORS.STATUS_DANGER,
+				THEME.DANGER,
 			);
 			return formatWithTimestamp(msg, "combat", tick);
 		}
@@ -305,9 +309,7 @@ export function formatAiThinking(
 	thinking: string,
 	tick?: number,
 ): FormattedMessage {
-	const truncated =
-		thinking.length > 200 ? `${thinking.slice(0, 200)}...` : thinking;
-	const msg = applyColor(`[AI Thinking] ${truncated}`, COLORS.MSG_AI);
+	const msg = applyColor(`[Thinking] ${thinking}`, THEME.MSG_AI);
 	return formatWithTimestamp(msg, "ai", tick);
 }
 
@@ -322,7 +324,7 @@ export function formatAiAction(
 					.map(([k, v]) => `${k}=${v}`)
 					.join(", ")})`
 			: "";
-	const msg = applyColor(`[AI Action] ${action}${argsStr}`, COLORS.MSG_AI);
+	const msg = applyColor(`>> ACTION: ${action}${argsStr}`, PALETTE.AMBER);
 	return formatWithTimestamp(msg, "ai", tick);
 }
 
@@ -330,7 +332,7 @@ export function formatAiMission(
 	mission: string,
 	tick?: number,
 ): FormattedMessage {
-	const msg = applyColor(`[AI Mission] ${mission}`, COLORS.MSG_AI);
+	const msg = applyColor(`[Mission Update] ${mission}`, THEME.MSG_AI);
 	return formatWithTimestamp(msg, "ai", tick);
 }
 
@@ -347,7 +349,10 @@ export function formatCombatEnd(
 	tick?: number,
 ): FormattedMessage {
 	const result = victory ? "Victory" : "Defeated";
-	const msg = applyColor(`Combat ended - ${result}`, COLORS.STATUS_DANGER);
+	const msg = applyColor(
+		`Combat ended - ${result}`,
+		victory ? THEME.SAFE : THEME.DANGER,
+	);
 	return formatWithTimestamp(msg, "combat", tick);
 }
 
@@ -361,7 +366,7 @@ export function formatDamageTaken(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Took ${damage} damage (Hull: ${hull}/${maxHull}, Shield: ${shield}/${maxShield})`,
-		COLORS.STATUS_DANGER,
+		THEME.DANGER,
 	);
 	return formatWithTimestamp(msg, "combat", tick);
 }
@@ -373,7 +378,7 @@ export function formatDamageDealt(
 ): FormattedMessage {
 	const msg = applyColor(
 		`Dealt ${damage} damage to ${targetId}`,
-		COLORS.STATUS_DANGER,
+		PALETTE.ORANGE, // High visibility for damage dealt
 	);
 	return formatWithTimestamp(msg, "combat", tick);
 }

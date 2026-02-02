@@ -1,8 +1,9 @@
 // Log panel with tabbed category filtering
 
 import blessed from "blessed";
-import { applyBold, applyColor, COLORS } from "../colors";
 import type { LogCategory } from "../formatters";
+import { PALETTE, THEME } from "../theme";
+import { applyBold, applyColor } from "../widgets";
 
 export type LogTab = "all" | LogCategory;
 
@@ -50,10 +51,10 @@ export class LogPanel {
 			height: typeof dims.height === "number" ? dims.height - 1 : dims.height,
 			tags: true,
 			border: "line",
-			label: "Events",
+			label: " EVENTS LOG ",
 			style: {
 				border: {
-					fg: "blue",
+					fg: THEME.BORDER_ACTIVE,
 				},
 				bg: "black",
 				fg: "white",
@@ -119,21 +120,21 @@ export class LogPanel {
 
 	private updateTabBar(): void {
 		const tabs: Array<{ key: string; label: string; tab: LogTab }> = [
-			{ key: "1", label: "All", tab: "all" },
-			{ key: "2", label: "Game", tab: "game" },
+			{ key: "1", label: "ALL", tab: "all" },
+			{ key: "2", label: "GAME", tab: "game" },
 			{ key: "3", label: "AI", tab: "ai" },
-			{ key: "4", label: "Combat", tab: "combat" },
-			{ key: "5", label: "Chat", tab: "chat" },
-			{ key: "6", label: "System", tab: "system" },
+			{ key: "4", label: "COMBAT", tab: "combat" },
+			{ key: "5", label: "CHAT", tab: "chat" },
+			{ key: "6", label: "SYS", tab: "system" },
 		];
 
 		const parts = tabs.map(({ key, label, tab }) => {
 			const isActive = tab === this.activeTab;
 			const text = `${key}:${label}`;
 			if (isActive) {
-				return applyColor(applyBold(text), COLORS.PANEL_TITLE);
+				return applyColor(applyBold(`[${text}]`), PALETTE.AMBER);
 			}
-			return applyColor(text, COLORS.STATUS_INACTIVE);
+			return applyColor(text, THEME.INACTIVE);
 		});
 
 		this.tabBar.setContent(` ${parts.join("  ")} `);

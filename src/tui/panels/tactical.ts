@@ -1,7 +1,13 @@
-// Tactical panel (right bottom) - combat status or nearby players
+// Tactical panel (right top) - combat status or nearby players
 
-import { applyBold, applyColor, COLORS } from "../colors";
-import { formatLine, formatResourceBar } from "../utils";
+import { PALETTE, THEME } from "../theme";
+import {
+	applyBold,
+	applyColor,
+	renderBar,
+	renderKv,
+	renderSectionTitle,
+} from "../widgets";
 
 export interface TacticalData {
 	inCombat: boolean;
@@ -13,7 +19,12 @@ export interface TacticalData {
 		shield?: number;
 		maxShield?: number;
 	};
-	nearby: Array<{ player_id?: string; username?: string }>;
+	nearby: Array<{
+		player_id?: string;
+		username?: string;
+		ship_class?: string;
+		faction_tag?: string;
+	}>;
 }
 
 export function renderTacticalPanel(data: TacticalData): string {
@@ -21,34 +32,28 @@ export function renderTacticalPanel(data: TacticalData): string {
 
 	if (data.inCombat && data.combatTarget) {
 		// Combat mode
-		lines.push(applyColor(applyBold("== COMBAT =="), COLORS.STATUS_DANGER));
-
-		const targetName = data.combatTarget.username ?? data.combatTarget.id;
-		lines.push(formatLine("Target", targetName, COLORS.PANEL_LABEL));
-
+		lines.push(applyColor(applyBold(" !! COMBAT ALERT !! "), PALETTE.BRICK));
 		lines.push("");
 
-		// Target health
+		const targetName = data.combatTarget.username ?? data.combatTarget.id;
+		lines.push(renderKv("TARGET", applyBold(targetName)));
+		lines.push("");
+
 		if (
 			data.combatTarget.hull !== undefined &&
 			data.combatTarget.maxHull !== undefined
 		) {
 			lines.push(
-				formatHealthBar(
-					"Hull",
-					data.combatTarget.hull,
-					data.combatTarget.maxHull,
-				),
+				renderBar("HULL", data.combatTarget.hull, data.combatTarget.maxHull),
 			);
 		}
-
 		if (
 			data.combatTarget.shield !== undefined &&
 			data.combatTarget.maxShield !== undefined
 		) {
 			lines.push(
-				formatHealthBar(
-					"Shield",
+				renderBar(
+					"SHIELD",
 					data.combatTarget.shield,
 					data.combatTarget.maxShield,
 				),
@@ -56,45 +61,39 @@ export function renderTacticalPanel(data: TacticalData): string {
 		}
 	} else {
 		// Safe mode - show nearby players
-		lines.push(applyColor(applyBold("== Tactical =="), COLORS.PANEL_TITLE));
+		lines.push(renderSectionTitle("TACTICAL SCANNER"));
 
-		lines.push(
-			formatLine(
-				"Status",
-				applyColor("Safe", COLORS.STATUS_SAFE),
-				COLORS.PANEL_LABEL,
-			),
-		);
+		lines.push(renderKv("Status", applyColor("SAFE", THEME.SAFE)));
+		lines.push(renderKv("Entities", data.nearby.length));
+		lines.push("");
 
 		if (data.nearby.length > 0) {
-			lines.push("");
-			lines.push(applyColor(applyBold("Nearby Players"), COLORS.PANEL_LABEL));
-			lines.push(
-				formatLine("Count", String(data.nearby.length), COLORS.PANEL_LABEL),
-			);
+			lines.push(applyColor("NEARBY SIGNALS:", THEME.LABEL));
 
-			const maxShow = 6;
+			const maxShow = 8;
 			for (const player of data.nearby.slice(0, maxShow)) {
-				const name = player.username ?? player.player_id ?? "unknown";
-				lines.push(`  ${name}`);
+				const name = player.username ?? player.player_id ?? "Unknown";
+				const ship = player.ship_class ? `[${player.ship_class}]` : "";
+				const faction = player.faction_tag ? `<${player.faction_tag}>` : "";
+
+				// Format: Name <Faction> [Ship]
+				let line = ` ${name}`;
+				if (faction) line += ` ${applyColor(faction, PALETTE.GRAY)}`;
+				if (ship) line += ` ${applyColor(ship, THEME.INACTIVE)}`;
+
+				lines.push(line);
 			}
 
 			if (data.nearby.length > maxShow) {
 				const remaining = data.nearby.length - maxShow;
-				lines.push(applyColor(`  +${remaining} more`, COLORS.STATUS_INACTIVE));
+				lines.push(
+					applyColor(` ... and ${remaining} more signals`, THEME.INACTIVE),
+				);
 			}
 		} else {
-			lines.push("");
-			lines.push(applyColor("No nearby players", COLORS.STATUS_INACTIVE));
+			lines.push(applyColor(" No active signatures detected.", THEME.INACTIVE));
 		}
 	}
 
 	return lines.join("\n");
-}
-
-function formatHealthBar(label: string, current: number, max: number): string {
-	// Use shared utility but override the value format to show percentage only
-	const bar = formatResourceBar(label, current, max);
-	// Extract just percentage for compact display
-	return bar.replace(/\d+\/\d+ \((\d+%)\)/, "$1");
 }

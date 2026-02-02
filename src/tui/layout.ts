@@ -1,5 +1,7 @@
 // Panel layout and positioning logic
 
+import { THEME } from "./theme";
+
 export interface PanelDimensions {
 	left: number;
 	top: number;
@@ -8,28 +10,30 @@ export interface PanelDimensions {
 }
 
 export interface LayoutConfig {
-	leftWidth: number; // Width percentage for left sidebar
-	rightWidth: number; // Width percentage for right sidebar
-	leftTopHeightPercent: number; // Percent of left sidebar for top panel
-	leftMiddleHeightPercent: number; // Percent of left sidebar for middle panel
-	rightTopHeightPercent: number; // Percent of right sidebar for top panel
+	leftWidth: number; // Percent
+	rightWidth: number; // Percent
 }
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
-	leftWidth: 20, // 20% for left sidebar
-	rightWidth: 20, // 20% for right sidebar (center gets 60%)
-	leftTopHeightPercent: 35, // 35% of left sidebar for player/ship panel
-	leftMiddleHeightPercent: 35, // 35% of left sidebar for world info panel
-	rightTopHeightPercent: 40, // 40% of right sidebar for tactical panel
+	leftWidth: 25,
+	rightWidth: 25,
 };
 
 export interface ComputedLayout {
-	playerShip: PanelDimensions;
-	worldInfo: PanelDimensions;
+	// Left Column
+	player: PanelDimensions;
+	ship: PanelDimensions;
+	navigation: PanelDimensions;
+
+	// Center Column
 	log: PanelDimensions;
-	location: PanelDimensions;
+	actionResult: PanelDimensions;
+
+	// Right Column
 	tactical: PanelDimensions;
 	context: PanelDimensions;
+
+	// Bottom
 	statusBar: PanelDimensions;
 }
 
@@ -38,10 +42,10 @@ export function computeLayout(
 	termHeight: number,
 	config: LayoutConfig = DEFAULT_LAYOUT,
 ): ComputedLayout {
-	// Minimum sizes to prevent panel collapse
-	const MIN_SIDEBAR_WIDTH = 18;
+	// Minimum sizes
+	const MIN_SIDEBAR_WIDTH = 25;
 	const MIN_CENTER_WIDTH = 40;
-	const MIN_PANEL_HEIGHT = 5;
+	const MIN_PANEL_HEIGHT = 4;
 
 	// Calculate absolute widths
 	const leftWidthAbs = Math.max(
@@ -57,78 +61,91 @@ export function computeLayout(
 		termWidth - leftWidthAbs - rightWidthAbs,
 	);
 
-	// Height for panels (reserve 1 line for status bar)
+	// Available height (minus status bar)
 	const availableHeight = termHeight - 1;
 
-	// Left sidebar split into 3 panels: player/ship, world info, location
-	const leftTopHeight = Math.max(
+	// -- Left Column --
+	// Split: Player (25%), Ship (45%), Nav (30%)
+	const playerHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		Math.floor((availableHeight * config.leftTopHeightPercent) / 100),
+		Math.floor(availableHeight * 0.25),
 	);
-	const leftMiddleHeight = Math.max(
+	const shipHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		Math.floor((availableHeight * config.leftMiddleHeightPercent) / 100),
+		Math.floor(availableHeight * 0.45),
 	);
-	const leftTopAdjusted = Math.min(
-		leftTopHeight,
-		availableHeight - MIN_PANEL_HEIGHT * 2,
-	);
-	const leftMiddleAdjusted = Math.min(
-		leftMiddleHeight,
-		availableHeight - leftTopAdjusted - MIN_PANEL_HEIGHT,
-	);
-	const leftBottomHeight = Math.max(
+	// Give remaining height to navigation to ensure flush bottom
+	const navHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		availableHeight - leftTopAdjusted - leftMiddleAdjusted,
+		availableHeight - playerHeight - shipHeight,
 	);
 
-	// Right sidebar split into 2 panels: tactical (40%), context (60%)
-	const rightTopHeight = Math.max(
+	// -- Center Column --
+	// Split: Log (75%), Action Result (25%)
+	const resultHeight = Math.max(6, Math.floor(availableHeight * 0.25));
+	const logHeight = Math.max(MIN_PANEL_HEIGHT, availableHeight - resultHeight);
+
+	// -- Right Column --
+	// Split: Tactical (40%), Context (60%)
+	const tacticalHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		Math.floor((availableHeight * config.rightTopHeightPercent) / 100),
+		Math.floor(availableHeight * 0.4),
 	);
-	const rightBottomHeight = Math.max(
+	const contextHeight = Math.max(
 		MIN_PANEL_HEIGHT,
-		availableHeight - rightTopHeight,
+		availableHeight - tacticalHeight,
 	);
 
 	return {
-		playerShip: {
+		// Left
+		player: {
 			left: 0,
 			top: 0,
 			width: leftWidthAbs,
-			height: leftTopAdjusted,
+			height: playerHeight,
 		},
-		worldInfo: {
+		ship: {
 			left: 0,
-			top: leftTopAdjusted,
+			top: playerHeight,
 			width: leftWidthAbs,
-			height: leftMiddleAdjusted,
+			height: shipHeight,
 		},
+		navigation: {
+			left: 0,
+			top: playerHeight + shipHeight,
+			width: leftWidthAbs,
+			height: navHeight,
+		},
+
+		// Center
 		log: {
 			left: leftWidthAbs,
 			top: 0,
 			width: centerWidthAbs,
-			height: availableHeight,
+			height: logHeight,
 		},
-		location: {
-			left: 0,
-			top: leftTopAdjusted + leftMiddleAdjusted,
-			width: leftWidthAbs,
-			height: leftBottomHeight,
+		actionResult: {
+			left: leftWidthAbs,
+			top: logHeight,
+			width: centerWidthAbs,
+			height: resultHeight,
 		},
+
+		// Right
 		tactical: {
 			left: leftWidthAbs + centerWidthAbs,
 			top: 0,
 			width: rightWidthAbs,
-			height: rightTopHeight,
+			height: tacticalHeight,
 		},
 		context: {
 			left: leftWidthAbs + centerWidthAbs,
-			top: rightTopHeight,
+			top: tacticalHeight,
 			width: rightWidthAbs,
-			height: rightBottomHeight,
+			height: contextHeight,
 		},
+
+		// Bottom
 		statusBar: {
 			left: 0,
 			top: termHeight - 1,
@@ -142,7 +159,7 @@ export function computeLayout(
 export function createBoxOptions(
 	dims: PanelDimensions,
 	label: string,
-	borderColor = "blue",
+	borderColor = THEME.BORDER_INACTIVE,
 ): Record<string, unknown> {
 	return {
 		left: dims.left,
