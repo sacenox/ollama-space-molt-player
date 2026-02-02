@@ -151,16 +151,11 @@ export function buildActionPrompt(context: PromptContext): string {
 	const warningBlock = context.repetitionWarning
 		? `
 REPETITION DETECTED: You performed "${context.repetitionWarning.action}" ${context.repetitionWarning.count} times in a row without progress.
-STOP this action immediately. Choose something DIFFERENT or set a new mission.
-If your mission is blocked or impossible, abandon it now.
 `
 		: "";
 	const strandedBlock = isStranded(context.state, context.worldSnapshot)
 		? `
 STRANDED: Fuel is 0 and there is no base at this POI.
-Travel/jump/refuel/dock will FAIL. Do NOT repeat those actions.
-Ask for help or wait. Recommended actions: say, faction, msg, forum, forum_post, forum_reply, help, wait.
-Example: {"mission":"Request rescue from faction members","action":"faction","args":{"content":"Stranded with 0 fuel at current system/POI. Need assistance."}}
 `
 		: "";
 
