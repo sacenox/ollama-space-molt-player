@@ -236,8 +236,8 @@ Think: "I'm doing [short-term activities] to eventually [achieve long-term goal]
 - Bad: Just names the next single action you'll take
 
 MISSION vs ACTION:
-- Mission: Multi-step purpose that persists (example: "gathering resources to fund my next venture")
-- Action: Single step you're about to take (example: "dock")
+- Mission: Multi-step purpose that persists
+- Action: Single step you're about to take
 
 UPDATE YOUR MISSION when:
 - Mission completed (achieved your objective)
