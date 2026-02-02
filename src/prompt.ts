@@ -168,25 +168,6 @@ ${helpBlock}
 CURRENT MISSION:
 ${missionText}
 
-MISSION GUIDELINES:
-A mission is a multi-step objective that guides several actions over multiple ticks.
-It should describe WHAT you're working toward and WHY, not just the next immediate action.
-
-STRUCTURE YOUR MISSION:
-Think: "I'm doing [short-term activities] to eventually [achieve long-term goal]"
-- Good: Describes the purpose behind multiple actions
-- Bad: Just names the next single action you'll take
-
-MISSION vs ACTION:
-- Mission: Multi-step purpose that persists (example: "gathering resources to fund my next venture")
-- Action: Single step you're about to take (example: "dock")
-
-UPDATE YOUR MISSION when:
-- Mission completed (achieved your objective)
-- Mission blocked (impossible to continue, need different approach)
-- Better opportunity arises (new priority emerges)
-- Current mission no longer aligns with your situation
-
 EMPIRE: ${getEmpireDescription(empire)}
 
 ALIGNMENT: ${alignmentInfo.name}
@@ -245,9 +226,24 @@ FORMAT RULES:
 - IDs must come from current state or world snapshot.
 - Never omit required args or leave them blank.
 
-ERROR RECOVERY:
-- If an action FAILED in recent memory, do NOT retry it with the same arguments.
-- Change your approach: try a different action, move to a different location, or update your mission.
+MISSION GUIDELINES:
+A mission is a multi-step objective that guides several actions over multiple ticks.
+It should describe WHAT you're working toward and WHY, not just the next immediate action.
+
+STRUCTURE YOUR MISSION:
+Think: "I'm doing [short-term activities] to eventually [achieve long-term goal]"
+- Good: Describes the purpose behind multiple actions
+- Bad: Just names the next single action you'll take
+
+MISSION vs ACTION:
+- Mission: Multi-step purpose that persists (example: "gathering resources to fund my next venture")
+- Action: Single step you're about to take (example: "dock")
+
+UPDATE YOUR MISSION when:
+- Mission completed (achieved your objective)
+- Mission blocked (impossible to continue, need different approach)
+- Better opportunity arises (new priority emerges)
+- Current mission no longer aligns with your situation
 
 HOW TO PLAY:
 Use all of the provided information to consider your mission. Then decide how to act next.
