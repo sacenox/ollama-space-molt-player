@@ -40,6 +40,7 @@ export interface TuiContext {
 	forum?: ContextForum;
 	memorySummary?: string | null;
 	lastActionResult?: string | null;
+	thinking?: string | null;
 }
 
 export interface TuiUpdateData {

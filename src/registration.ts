@@ -8,7 +8,7 @@ import {
 import type { OllamaAgent } from "./ollama";
 import type { OutputInterface } from "./output-interface";
 import { buildRegistrationPrompt } from "./prompt";
-import { formatAiThinking, formatSystemMessage } from "./tui/formatters";
+import { formatSystemMessage } from "./tui/formatters";
 import type {
 	AlignmentType,
 	RegistrationChoice,
@@ -44,7 +44,6 @@ export async function runRegistrationFlow(
 			const result = await ollama.generateJson<RegistrationChoice>(prompt);
 			output.logDebug("REGISTRATION_RESPONSE_RAW", result.raw);
 			if (result.thinking) {
-				output.log(formatAiThinking(result.thinking));
 				output.logDebug("REGISTRATION_THINKING", result.thinking);
 			}
 			const username = String(result.json.username ?? "").trim();

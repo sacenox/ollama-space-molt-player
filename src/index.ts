@@ -27,7 +27,6 @@ import { runRegistrationFlow } from "./registration";
 import {
 	formatAiAction,
 	formatAiMission,
-	formatAiThinking,
 	formatChatMessage,
 	formatError,
 	formatLoggedIn,
@@ -346,8 +345,10 @@ async function startActionLoop(): Promise<void> {
 			const result = await ollama.generateJson(prompt);
 			output.logDebug("LLM_RESPONSE_RAW", result.raw);
 			if (result.thinking) {
-				output.log(formatAiThinking(result.thinking, getCurrentTick()));
 				output.logDebug("LLM_THINKING", result.thinking);
+				// Update TUI context with thinking message
+				gameState.tuiContext.thinking = result.thinking;
+				output.update({ context: gameState.tuiContext });
 			}
 			const validation = validateAction(result.json);
 			if (!validation.ok || !validation.action) {
