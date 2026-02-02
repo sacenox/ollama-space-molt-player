@@ -206,9 +206,11 @@ export function buildActionPrompt(context: PromptContext): string {
 	const lastActionText = context.lastActionResult?.trim()
 		? context.lastActionResult.trim()
 		: "No actions yet.";
-	const forumContextBlock = formatForumContext(
-		context.recentHistory,
+	const playerName = context.state.player?.username ?? "unknown";
+	const socialBlock = buildSocialSection(
+		context.memory,
 		context.currentTick,
+		playerName,
 	);
 	const helpBlock = `\nGAME INFORMATION:\n${HELP_TEXT}`;
 	const missionText = context.currentMission?.trim()
@@ -300,7 +302,7 @@ ${memoryText}
 LAST ACTION RESULT:
 ${lastActionText}
 
-${forumContextBlock}
+${socialBlock}
  
  ACTION SCHEMA (JSON ONLY):
   {"mission":"...","action":"travel|jump|dock|undock|mine|attack|scan|buy|sell|refuel|repair|craft|chat|say|faction|msg|create_faction|set_status|set_colors|set_anonymous|status|system|poi|base|skills|recipes|version|nearby|cargo|forum|forum_thread|forum_post|forum_reply|forum_upvote|help|wait","args":{...}}
@@ -616,6 +618,18 @@ function formatWorldSnapshot(
 	return lines.join("\n");
 }
 
+// Internal/technical events that should not appear in game memory summaries
+const INTERNAL_EVENT_TYPES = new Set([
+	"llm_timeout", // Ollama request timeout
+	"loop_error", // Action loop error
+	"llm_invalid_action", // LLM returned invalid action format
+	"action_sent", // Action confirmation (already filtered separately)
+	"welcome", // Connection handshake
+	"registered", // Registration confirmation
+	"logged_in", // Login confirmation
+	"version_info", // Server version info
+]);
+
 export function buildSummaryPrompt(
 	history: HistoryEntry[],
 	currentTick: number,
@@ -665,6 +679,11 @@ function formatHistoryForSummary(
 
 		// Skip raw server messages (debugging data, not game events)
 		if (entry.type.startsWith("raw_")) {
+			continue;
+		}
+
+		// Skip internal/technical events (not game-related)
+		if (INTERNAL_EVENT_TYPES.has(entry.type)) {
 			continue;
 		}
 
@@ -839,6 +858,7 @@ export function buildLastActionResult(
 			appended = true;
 			continue;
 		}
+		// Fallback for unhandled result types
 		lines.push(`- ${result.result_type} received`);
 		appended = true;
 	}
@@ -850,35 +870,254 @@ export function buildLastActionResult(
 	return lines.join("\n");
 }
 
-function formatForumContext(
-	history: HistoryEntry[],
-	currentTick: number,
-): string {
-	if (history.length === 0) return "";
+function formatRecentChat(
+	memory: MemoryStore,
+	_currentTick: number,
+	playerName: string,
+): string[] {
+	// Get last 5 chat_message events
+	const allHistory = memory.getRecentHistory(100, 100);
+	const chatEvents = allHistory
+		.filter((entry) => entry.kind === "event" && entry.type === "chat_message")
+		.slice(-5); // Take last 5 (most recent)
 
-	const lastForumCheck = findLastForumCheck(history, currentTick);
-	const createdPosts = findRecentForumPosts(history, 3);
-	const repliedThreads = findRecentRepliedThreads(history, 3);
+	const lines: string[] = [];
 
-	const lines: string[] = ["FORUM INFORMATION:"];
-	lines.push(`- Last forum check: ${formatForumCheckLine(lastForumCheck)}`);
-	lines.push("- Created posts (last 3):");
-	if (createdPosts.length === 0) {
-		lines.push("  (none)");
-	} else {
-		for (const post of createdPosts) {
-			const categoryText = post.category ? `[${post.category}] ` : "";
-			lines.push(
-				`  - ${categoryText}${post.title ?? "(untitled)"} (T${post.tick})`,
-			);
+	for (const event of chatEvents) {
+		const payload = parseJson(event.payload ?? "");
+		if (!payload || typeof payload !== "object") continue;
+
+		const tick = event.tick;
+		const channel = getStringField(payload, "channel") ?? "unknown";
+		const sender = getStringField(payload, "sender") ?? "unknown";
+		const senderId = getStringField(payload, "sender_id") ?? "unknown";
+		const content = getStringField(payload, "content") ?? "";
+
+		const isFromPlayer = sender === playerName;
+
+		let formatted = `T${tick} [${channel}] `;
+
+		if (channel === "private") {
+			if (isFromPlayer) {
+				// Player sent this message - need to find recipient
+				// For private messages sent by player, we don't have recipient in the payload
+				// so we'll just show "you -> [private]"
+				formatted += "you -> [private]";
+			} else {
+				// Player received this message
+				formatted += `${sender} (id=${senderId}) -> you`;
+			}
+		} else {
+			if (isFromPlayer) {
+				formatted += "you -> all";
+			} else {
+				formatted += `${sender} (id=${senderId})`;
+			}
+		}
+
+		formatted += `: "${truncateText(content, 80)}"`;
+		lines.push(formatted);
+	}
+
+	return lines;
+}
+
+function formatCreatedThreads(
+	memory: MemoryStore,
+	_currentTick: number,
+): string[] {
+	const allHistory = memory.getRecentHistory(200, 0);
+	const forumPosts = allHistory
+		.filter((entry) => entry.kind === "action" && entry.action === "forum_post")
+		.slice(-3); // Take last 3 (most recent)
+
+	const lines: string[] = [];
+
+	for (const post of forumPosts) {
+		const args = parseActionArgs(post.args);
+		const category =
+			typeof args?.category === "string" ? args.category : "unknown";
+		const title = typeof args?.title === "string" ? args.title : "(untitled)";
+
+		// Try to find thread_id from results
+		const results = memory.getResultsForAction(post.tick, post.action);
+		let threadId = "unknown";
+
+		for (const result of results) {
+			const payload = parseJson(result.payload ?? "");
+			if (payload && typeof payload === "object") {
+				const id =
+					getStringField(payload, "thread_id") ?? getStringField(payload, "id");
+				if (id) {
+					threadId = id;
+					break;
+				}
+			}
+		}
+
+		lines.push(
+			`[${category}] "${truncateText(title, 50)}" (thread_id=${threadId}, T${post.tick})`,
+		);
+	}
+
+	return lines;
+}
+
+function formatParticipatedThreads(
+	memory: MemoryStore,
+	_currentTick: number,
+): string[] {
+	const allHistory = memory.getRecentHistory(200, 0);
+	const replies = allHistory.filter(
+		(entry) => entry.kind === "action" && entry.action === "forum_reply",
+	);
+
+	// Deduplicate by thread_id, keep most recent per thread
+	const threadMap = new Map<string, HistoryEntry>();
+	for (const reply of replies) {
+		const args = parseActionArgs(reply.args);
+		const threadId = typeof args?.thread_id === "string" ? args.thread_id : "";
+		if (!threadId) continue;
+
+		if (!threadMap.has(threadId)) {
+			threadMap.set(threadId, reply);
 		}
 	}
-	lines.push("- Participated threads (last 3):");
-	if (repliedThreads.length === 0) {
+
+	const uniqueReplies = Array.from(threadMap.values()).slice(-3); // Take last 3 (most recent)
+	const lines: string[] = [];
+
+	for (const reply of uniqueReplies) {
+		const args = parseActionArgs(reply.args);
+		const threadId =
+			typeof args?.thread_id === "string" ? args.thread_id : "unknown";
+
+		// Count how many times player replied to this thread
+		const replyCount = replies.filter((r) => {
+			const a = parseActionArgs(r.args);
+			return a?.thread_id === threadId;
+		}).length;
+
+		lines.push(
+			`thread_id=${threadId} (T${reply.tick}, ${replyCount} ${replyCount === 1 ? "reply" : "replies"})`,
+		);
+	}
+
+	return lines;
+}
+
+function formatRecentForumBrowse(
+	memory: MemoryStore,
+	currentTick: number,
+): { header: string; threads: string[] } | null {
+	// Find most recent forum action
+	const allHistory = memory.getRecentHistory(100, 0);
+	const forumAction = allHistory.find(
+		(entry) => entry.kind === "action" && entry.action === "forum",
+	);
+
+	if (!forumAction) return null;
+
+	const tickDiff = currentTick - forumAction.tick;
+	if (tickDiff > 10) return null; // Too old
+
+	// Get forum_list results from that action
+	const results = memory.getResultsForAction(forumAction.tick, "forum");
+	const threads: string[] = [];
+
+	for (const result of results) {
+		if (result.result_type !== "forum_list") continue;
+
+		const payload = parseJson(result.payload ?? "");
+		if (!payload || typeof payload !== "object") continue;
+
+		const threadList = findArrayField(payload as Record<string, unknown>, [
+			"threads",
+			"items",
+			"results",
+			"posts",
+		]);
+
+		if (!threadList || threadList.length === 0) continue;
+
+		for (const item of threadList.slice(0, 5)) {
+			if (!item || typeof item !== "object") continue;
+			const record = item as Record<string, unknown>;
+
+			const id =
+				getStringField(record, "id") ??
+				getStringField(record, "thread_id") ??
+				"unknown";
+			const title =
+				getStringField(record, "title") ??
+				getStringField(record, "subject") ??
+				"(untitled)";
+			const category = getStringField(record, "category") ?? "general";
+			const author =
+				getStringField(record, "author") ??
+				getStringField(record, "username") ??
+				"unknown";
+			const replies =
+				getStringField(record, "reply_count") ??
+				getStringField(record, "replies") ??
+				"0";
+
+			threads.push(
+				`[${category}] "${truncateText(title, 50)}" (thread_id=${id}, by=${author}, replies=${replies})`,
+			);
+		}
+
+		break; // Only process first forum_list result
+	}
+
+	const header = `Recent Forum Browse (T${forumAction.tick}, ${tickDiff} ${tickDiff === 1 ? "tick" : "ticks"} ago):`;
+
+	return threads.length > 0 ? { header, threads } : null;
+}
+
+function buildSocialSection(
+	memory: MemoryStore,
+	currentTick: number,
+	playerName: string,
+): string {
+	const lines: string[] = ["SOCIAL:"];
+
+	// Chat messages
+	const chatLines = formatRecentChat(memory, currentTick, playerName);
+	lines.push("", "Recent Chat (last 5 messages):");
+	if (chatLines.length === 0) {
+		lines.push("  (no recent messages)");
+	} else {
+		lines.push(...chatLines.map((line) => `- ${line}`));
+	}
+
+	// Forum activity
+	lines.push("", "Forum Activity:");
+
+	// Created threads
+	const createdThreads = formatCreatedThreads(memory, currentTick);
+	lines.push("Created Threads:");
+	if (createdThreads.length === 0) {
 		lines.push("  (none)");
 	} else {
-		for (const thread of repliedThreads) {
-			lines.push(`  - ${thread.threadId} (T${thread.tick})`);
+		lines.push(...createdThreads.map((line) => `  - ${line}`));
+	}
+
+	// Participated threads
+	const participatedThreads = formatParticipatedThreads(memory, currentTick);
+	lines.push("Participated Threads:");
+	if (participatedThreads.length === 0) {
+		lines.push("  (none)");
+	} else {
+		lines.push(...participatedThreads.map((line) => `  - ${line}`));
+	}
+
+	// Recent forum browse (only if within 10 ticks)
+	const browseLine = formatRecentForumBrowse(memory, currentTick);
+	if (browseLine) {
+		lines.push("", browseLine.header);
+		if (browseLine.threads.length > 0) {
+			lines.push(...browseLine.threads.map((line) => `  - ${line}`));
 		}
 	}
 
@@ -1077,68 +1316,6 @@ function getObjectField(
 	return null;
 }
 
-type ForumCheckInfo = {
-	tick: number;
-	relative: string;
-};
-
-type ForumPostInfo = {
-	tick: number;
-	category: string | null;
-	title: string | null;
-};
-
-type ForumThreadInfo = {
-	tick: number;
-	threadId: string;
-};
-
-function findLastForumCheck(
-	history: HistoryEntry[],
-	currentTick: number,
-): ForumCheckInfo | null {
-	for (const entry of history) {
-		if (entry.kind !== "action" || entry.action !== "forum") continue;
-		const relative = formatTickTime(entry.tick, currentTick);
-		return { tick: entry.tick, relative };
-	}
-	return null;
-}
-
-function findRecentForumPosts(
-	history: HistoryEntry[],
-	limit: number,
-): ForumPostInfo[] {
-	const posts: ForumPostInfo[] = [];
-	for (const entry of history) {
-		if (entry.kind !== "action" || entry.action !== "forum_post") continue;
-		const args = parseActionArgs(entry.args);
-		const category = typeof args?.category === "string" ? args.category : null;
-		const title = typeof args?.title === "string" ? args.title : null;
-		posts.push({ tick: entry.tick, category, title });
-		if (posts.length >= limit) break;
-	}
-	return posts;
-}
-
-function findRecentRepliedThreads(
-	history: HistoryEntry[],
-	limit: number,
-): ForumThreadInfo[] {
-	const threads: ForumThreadInfo[] = [];
-	const seen = new Set<string>();
-	for (const entry of history) {
-		if (entry.kind !== "action" || entry.action !== "forum_reply") continue;
-		const args = parseActionArgs(entry.args);
-		const threadId = typeof args?.thread_id === "string" ? args.thread_id : "";
-		if (!threadId || seen.has(threadId)) continue;
-		seen.add(threadId);
-		threads.push({ tick: entry.tick, threadId });
-		if (threads.length >= limit) break;
-	}
-	return threads;
-}
-
 function parseActionArgs(value: string | null): Record<string, unknown> | null {
 	if (!value) return null;
 	try {
@@ -1150,11 +1327,6 @@ function parseActionArgs(value: string | null): Record<string, unknown> | null {
 		return null;
 	}
 	return null;
-}
-
-function formatForumCheckLine(info: ForumCheckInfo | null): string {
-	if (!info) return "unknown";
-	return info.relative;
 }
 
 function formatTickTime(tick: number, currentTick: number): string {

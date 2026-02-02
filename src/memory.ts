@@ -389,6 +389,21 @@ export class MemoryStore {
 		return combined;
 	}
 
+	getResultsForAction(tick: number, action: string): ActionResult[] {
+		const actionRow = this.db
+			.query(
+				"SELECT id FROM actions WHERE tick = ? AND action = ? ORDER BY id DESC LIMIT 1",
+			)
+			.get(tick, action) as { id: number } | undefined;
+		if (!actionRow) return [];
+		const results = this.db
+			.query(
+				"SELECT ts, tick, result_type, payload FROM action_results WHERE action_id = ? ORDER BY id ASC",
+			)
+			.all(actionRow.id) as ActionResult[];
+		return results;
+	}
+
 	getLastActionWithResults(): {
 		action: StoredAction;
 		results: ActionResult[];
