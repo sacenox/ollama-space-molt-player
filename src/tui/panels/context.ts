@@ -49,7 +49,7 @@ export function renderContextPanel(context: TuiContext | undefined): string {
 	if (thinking) {
 		lines.push("");
 		lines.push(renderSectionTitle("CURRENT THINKING"));
-		const truncated = truncateThinking(thinking, 200);
+		const truncated = truncateThinking(thinking, 500);
 		lines.push(applyColor(truncated, THEME.VALUE));
 	}
 

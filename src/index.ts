@@ -436,7 +436,7 @@ async function startActionLoop(): Promise<void> {
 				validation.action.args ?? {},
 				promptExcerpt,
 				result.raw,
-				result.thinking ? truncateThinking(result.thinking, 200) : null,
+				result.thinking ? truncateThinking(result.thinking, 500) : null,
 			);
 			gameState.pendingActionId = actionId;
 			const pendingDelayMs = Math.max(3000, config.tickDelayMs * 2);

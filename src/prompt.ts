@@ -559,6 +559,13 @@ export function buildLastActionResult(
 			const code = getStringField(payload, "code") ?? "unknown";
 			const message = getStringField(payload, "message") ?? "Unknown error";
 			lines.push(`- ERROR [${code}]: ${message}`);
+
+			// Add recovery guidance for known error codes
+			const guidance = getErrorRecoveryGuidance(code);
+			if (guidance) {
+				lines.push(`  -> SOLUTION: ${guidance}`);
+			}
+
 			appended = true;
 			continue;
 		}
@@ -1268,4 +1275,34 @@ function truncateText(value: string, max: number): string {
 	if (value.length <= max) return value;
 	if (max <= 3) return value.slice(0, max);
 	return `${value.slice(0, max - 3)}...`;
+}
+
+function getErrorRecoveryGuidance(errorCode: string): string | null {
+	const guidanceMap: Record<string, string> = {
+		docked:
+			'Use action "undock" with args {} to leave the station, then retry your action',
+		not_docked:
+			'Use action "dock" with args {} to dock at the current POI\'s base, then retry your action',
+		no_fuel:
+			'Use action "refuel" at a base to restore fuel (requires docking first if not already docked)',
+		no_credits:
+			"Insufficient credits. Mine resources or sell items to earn credits",
+		no_cargo_space: "Cargo hold full. Sell items at a base to free up space",
+		invalid_target:
+			'Target not found. Use "nearby" action to refresh target list',
+		invalid_poi:
+			'Unknown POI ID. Use "system" action to see valid POI IDs in current system',
+		wrong_system:
+			'Target POI is in a different system. Use "jump" to travel there first',
+		not_connected:
+			'Systems not connected. Use "system" to check connections and find a route',
+		already_traveling:
+			"Already in transit. Wait for arrival before issuing new travel commands",
+		already_jumping:
+			"Already jumping. Wait for arrival before issuing new jump commands",
+		rate_limited:
+			"Too many actions this tick. Wait for next tick (~10 seconds)",
+	};
+
+	return guidanceMap[errorCode] ?? null;
 }
