@@ -2,7 +2,6 @@
 
 import blessed from "blessed";
 import type { Base, Player, POI, Ship, System } from "../../client/src/types";
-import type { PersonalityType } from "../actions";
 import type { AlignmentType } from "../types";
 import type { FormattedMessage } from "./formatters";
 import { computeLayout, createBoxOptions } from "./layout";
@@ -57,7 +56,8 @@ export interface TuiUpdateData {
 		faction_tag?: string;
 	}>;
 	alignment?: AlignmentType;
-	personality?: PersonalityType;
+	personality_title?: string;
+	personality_behavior?: string;
 	tick?: number;
 	traveling?: boolean;
 	travelTarget?: string | null;
@@ -237,8 +237,10 @@ export class Tui {
 		if (data.pois !== undefined) this.state.pois = data.pois;
 		if (data.nearby !== undefined) this.state.nearby = data.nearby;
 		if (data.alignment !== undefined) this.state.alignment = data.alignment;
-		if (data.personality !== undefined)
-			this.state.personality = data.personality;
+		if (data.personality_title !== undefined)
+			this.state.personality_title = data.personality_title;
+		if (data.personality_behavior !== undefined)
+			this.state.personality_behavior = data.personality_behavior;
 		if (data.tick !== undefined) this.state.tick = data.tick;
 		if (data.traveling !== undefined) this.state.traveling = data.traveling;
 		if (data.travelTarget !== undefined)
@@ -280,7 +282,8 @@ export class Tui {
 		const playerData: PlayerData = {
 			player: this.state.player ?? null,
 			alignment: this.state.alignment,
-			personality: this.state.personality,
+			personality_title: this.state.personality_title,
+			personality_behavior: this.state.personality_behavior,
 			tick: this.state.tick ?? 0,
 			currentMission: this.state.mission ?? null,
 		};

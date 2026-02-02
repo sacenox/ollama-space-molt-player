@@ -3,12 +3,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import {
-	isValidAlignment,
-	isValidEmpire,
-	isValidPersonality,
-	isValidSpeechStyle,
-} from "./utils";
+import { isValidAlignment, isValidEmpire, isValidSpeechStyle } from "./utils";
 
 const DEFAULT_COUNT = 5;
 const DEFAULT_PREFIX = "swarm";
@@ -26,7 +21,6 @@ const { values } = parseArgs({
 		"restart-delay": { type: "string" },
 		empire: { type: "string" },
 		alignment: { type: "string" },
-		personality: { type: "string" },
 		"speech-style": { type: "string", short: "s" },
 	},
 	strict: false,
@@ -38,7 +32,6 @@ type SwarmConfig = {
 	restartDelayMs: number;
 	empire: string | null;
 	alignment: string | null;
-	personality: string | null;
 	speechStyle: string | null;
 };
 
@@ -130,22 +123,6 @@ function parseAlignment(raw: unknown): string | null {
 	return value;
 }
 
-function parsePersonality(raw: unknown): string | null {
-	if (raw === undefined) return null;
-	if (typeof raw !== "string" || raw.trim() === "") {
-		console.error("Error: --personality requires a value");
-		process.exit(1);
-	}
-	const value = raw.trim().toLowerCase();
-	if (!isValidPersonality(value)) {
-		console.error(
-			"Error: --personality must be one of: cartographer, merchant, warrior, diplomat, pragmatist",
-		);
-		process.exit(1);
-	}
-	return value;
-}
-
 function parseSpeechStyle(raw: unknown): string | null {
 	if (raw === undefined) return null;
 	if (typeof raw !== "string" || raw.trim() === "") {
@@ -168,7 +145,6 @@ const swarmConfig: SwarmConfig = {
 	restartDelayMs: parseRestartDelay(values["restart-delay"]),
 	empire: parseEmpire(values.empire),
 	alignment: parseAlignment(values.alignment),
-	personality: parsePersonality(values.personality),
 	speechStyle: parseSpeechStyle(values["speech-style"]),
 };
 
@@ -210,9 +186,6 @@ function buildArgs(instanceName: string): string[] {
 	}
 	if (swarmConfig.alignment) {
 		args.push("--alignment", swarmConfig.alignment);
-	}
-	if (swarmConfig.personality) {
-		args.push("--personality", swarmConfig.personality);
 	}
 	if (swarmConfig.speechStyle) {
 		args.push("--speech-style", swarmConfig.speechStyle);
@@ -344,8 +317,6 @@ function startSwarm(): void {
 	if (swarmConfig.empire) logSwarm(`override empire=${swarmConfig.empire}`);
 	if (swarmConfig.alignment)
 		logSwarm(`override alignment=${swarmConfig.alignment}`);
-	if (swarmConfig.personality)
-		logSwarm(`override personality=${swarmConfig.personality}`);
 	if (swarmConfig.speechStyle)
 		logSwarm(`override speech-style=${swarmConfig.speechStyle}`);
 

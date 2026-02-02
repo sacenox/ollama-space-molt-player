@@ -1,7 +1,11 @@
 import type { ClientState } from "../client/src/client";
 import type { WorldSnapshot } from "./prompt";
 import type { TuiContext } from "./tui/index";
-import type { Credentials, RegistrationChoice } from "./types";
+import type {
+	Credentials,
+	RegistrationChoice,
+	RegistrationContext,
+} from "./types";
 
 export class GameState {
 	credentials: Credentials | null = null;
@@ -31,7 +35,7 @@ export class GameState {
 	lastCredits: number | null = null;
 
 	registrationRetries = 0;
-	failedRegistrationNames: string[] = [];
+	registrationContext: RegistrationContext = { failedNames: [] };
 
 	// TUI context (warnings + forum) - updated during action loop
 	tuiContext: TuiContext = {};

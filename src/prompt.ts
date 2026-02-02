@@ -7,7 +7,7 @@ import {
 	SPEECH_STYLE_DESCRIPTIONS,
 } from "./constants";
 import type { HistoryEntry, MemoryStore } from "./memory";
-import type { AlignmentType, PersonalityType, SpeechStyleType } from "./types";
+import type { AlignmentType, SpeechStyleType } from "./types";
 
 export interface PromptContext {
 	state: ClientState;
@@ -19,7 +19,8 @@ export interface PromptContext {
 	memory: MemoryStore;
 	empire?: EmpireID;
 	alignment?: AlignmentType;
-	personality?: PersonalityType;
+	personalityTitle?: string;
+	personalityBehavior?: string;
 	speechStyle?: SpeechStyleType;
 	lastForumThreadId?: string | null;
 	lastForumPostTitle?: string | null;
@@ -144,8 +145,10 @@ export function buildActionPrompt(context: PromptContext): string {
 	const empire = context.empire ?? "solarian";
 	const alignment = context.alignment ?? "neutral";
 	const alignmentInfo = ALIGNMENT_DESCRIPTIONS[alignment];
-	const personality = context.personality ?? "pragmatist";
-	const personalityInfo = PERSONALITY_ARCHETYPES[personality];
+	const personalityTitle = context.personalityTitle ?? "Pragmatist";
+	const personalityBehavior =
+		context.personalityBehavior ??
+		"Resourceful survivor who seizes every opportunity, pivots between roles, and thrives where others struggle.";
 	const speechStyle = context.speechStyle ?? "mythic";
 	const speechStyleInfo = SPEECH_STYLE_DESCRIPTIONS[speechStyle];
 	const warningBlock = context.repetitionWarning
@@ -172,8 +175,8 @@ EMPIRE: ${getEmpireDescription(empire)}
 
 ALIGNMENT: ${alignmentInfo.name}
 
-PERSONALITY: ${personalityInfo.name}
-${personalityInfo.description}
+PERSONALITY: ${personalityTitle}
+${personalityBehavior}
 
 SPEECH STYLE: ${speechStyleInfo.name}
 ${getSpeechStyleGuidance(speechStyle)}
@@ -257,105 +260,6 @@ function buildThinkingSection(thinking: string | null | undefined): string {
 	return `
 LAST DECISION REASONING:
 ${thinking.trim()}
-`;
-}
-
-const EMPIRE_DESCRIPTIONS: Record<
-	string,
-	{ name: string; description: string }
-> = {
-	solarian: {
-		name: "Solarian",
-		description:
-			"Masters of energy and trade. Bonus to mining yield and credits.",
-	},
-	voidborn: {
-		name: "Voidborn",
-		description:
-			"Children of the dark. Enhanced stealth and shield regeneration.",
-	},
-	crimson: {
-		name: "Crimson",
-		description:
-			"Warriors of the red nebula. Superior combat damage and armor.",
-	},
-	nebula: {
-		name: "Nebula",
-		description:
-			"Explorers and scientists. Faster travel and discovery bonuses.",
-	},
-	outerrim: {
-		name: "Outer Rim",
-		description:
-			"Frontier survivors. Versatile with crafting and cargo bonuses.",
-	},
-};
-
-export function buildRegistrationPrompt(
-	includeHelp: boolean,
-	failedNames: string[] = [],
-): string {
-	const helpBlock = includeHelp ? `\nHELP MENU:\n${HELP_TEXT}` : "";
-	const failedBlock = failedNames.length
-		? `\nPreviously rejected usernames (do NOT reuse): ${failedNames.join(", ")}`
-		: "";
-
-	const shuffledEmpires = shuffleArray(Object.entries(EMPIRE_DESCRIPTIONS));
-	const empireDescriptions = shuffledEmpires
-		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
-		.join("\n");
-	const empireKeys = shuffledEmpires.map(([key]) => key).join("|");
-
-	const shuffledAlignments = shuffleArray(
-		Object.entries(ALIGNMENT_DESCRIPTIONS),
-	);
-	const alignmentDescriptions = shuffledAlignments
-		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
-		.join("\n");
-	const alignmentKeys = shuffledAlignments.map(([key]) => key).join("|");
-
-	const shuffledPersonalities = shuffleArray(
-		Object.entries(PERSONALITY_ARCHETYPES),
-	);
-	const personalityDescriptions = shuffledPersonalities
-		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
-		.join("\n");
-	const personalityKeys = shuffledPersonalities.map(([key]) => key).join("|");
-
-	const shuffledSpeechStyles = shuffleArray(
-		Object.entries(SPEECH_STYLE_DESCRIPTIONS),
-	);
-	const speechStyleDescriptions = shuffledSpeechStyles
-		.map(([key, info]) => `  ${info.name} (${key}): ${info.description}`)
-		.join("\n");
-	const speechStyleKeys = shuffledSpeechStyles.map(([key]) => key).join("|");
-
-	return `You are creating a SpaceMolt account. Choose a username, empire, alignment, personality, and speech style.
-The username MUST be unique and original. Do not reuse any prior suggestions.
-To maximize uniqueness, include a distinctive suffix (digits or a short tag).
-Let the speech style guide the username flavor and chat voice (not your goals).
-
-EMPIRES:
-${empireDescriptions}
-
-ALIGNMENTS:
-${alignmentDescriptions}
-
-PERSONALITY ARCHETYPES:
-${personalityDescriptions}
-
-SPEECH STYLES:
-${speechStyleDescriptions}
-
-Choose an empire, alignment, personality, and speech style combination.
-Briefly explain why you chose your personality (1 sentence).
-
-Respond ONLY with JSON. No extra text.
-${helpBlock}
-${failedBlock}
-
-JSON SCHEMA:
-{"username":"...","empire":"${empireKeys}","alignment":"${alignmentKeys}","personality":"${personalityKeys}","speech_style":"${speechStyleKeys}","personality_reason":"..."}
 `;
 }
 
@@ -1364,13 +1268,4 @@ function truncateText(value: string, max: number): string {
 	if (value.length <= max) return value;
 	if (max <= 3) return value.slice(0, max);
 	return `${value.slice(0, max - 3)}...`;
-}
-
-function shuffleArray<T>(array: T[]): T[] {
-	const result = [...array];
-	for (let i = result.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
-		[result[i], result[j]] = [result[j], result[i]];
-	}
-	return result;
 }

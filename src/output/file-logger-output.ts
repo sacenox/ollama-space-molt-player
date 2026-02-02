@@ -83,8 +83,10 @@ export class FileLoggerOutput implements OutputInterface {
 		if (data.base !== undefined) this.state.base = data.base;
 		if (data.pois !== undefined) this.state.pois = data.pois;
 		if (data.nearby !== undefined) this.state.nearby = data.nearby;
-		if (data.personality !== undefined)
-			this.state.personality = data.personality;
+		if (data.personality_title !== undefined)
+			this.state.personality_title = data.personality_title;
+		if (data.personality_behavior !== undefined)
+			this.state.personality_behavior = data.personality_behavior;
 		if (data.tick !== undefined) this.state.tick = data.tick;
 		if (data.traveling !== undefined) this.state.traveling = data.traveling;
 		if (data.travelTarget !== undefined)

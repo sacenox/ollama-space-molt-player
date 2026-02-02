@@ -1,10 +1,5 @@
 import { Database } from "bun:sqlite";
-import type {
-	AlignmentType,
-	Credentials,
-	PersonalityType,
-	SpeechStyleType,
-} from "./types";
+import type { AlignmentType, Credentials, SpeechStyleType } from "./types";
 
 export interface Snapshot {
 	tick: number;
@@ -118,7 +113,8 @@ export class MemoryStore {
         ts TEXT NOT NULL,
         username TEXT NOT NULL,
         token TEXT NOT NULL,
-        personality TEXT NOT NULL,
+        personality_title TEXT NOT NULL,
+        personality_behavior TEXT NOT NULL,
         alignment TEXT NOT NULL DEFAULT 'neutral',
         speech_style TEXT NOT NULL DEFAULT 'mythic'
       );
@@ -167,6 +163,13 @@ export class MemoryStore {
 		const hasSpeechStyle = credColumns.some(
 			(col) => col.name === "speech_style",
 		);
+		const hasPersonalityTitle = credColumns.some(
+			(col) => col.name === "personality_title",
+		);
+		const hasPersonalityBehavior = credColumns.some(
+			(col) => col.name === "personality_behavior",
+		);
+
 		if (!hasAlignment) {
 			this.db.exec(
 				"ALTER TABLE credentials ADD COLUMN alignment TEXT NOT NULL DEFAULT 'neutral'",
@@ -175,6 +178,18 @@ export class MemoryStore {
 		if (!hasSpeechStyle) {
 			this.db.exec(
 				"ALTER TABLE credentials ADD COLUMN speech_style TEXT NOT NULL DEFAULT 'mythic'",
+			);
+		}
+
+		// Migrate from old personality column to new personality_title/behavior columns
+		if (!hasPersonalityTitle) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN personality_title TEXT NOT NULL DEFAULT 'Pragmatist'",
+			);
+		}
+		if (!hasPersonalityBehavior) {
+			this.db.exec(
+				"ALTER TABLE credentials ADD COLUMN personality_behavior TEXT NOT NULL DEFAULT 'Resourceful survivor who seizes every opportunity, pivots between roles, and thrives where others struggle.'",
 			);
 		}
 
@@ -215,22 +230,31 @@ export class MemoryStore {
 	getCredentials(): Credentials | null {
 		const row = this.db
 			.query(
-				"SELECT username, token, personality, alignment, speech_style FROM credentials ORDER BY id DESC LIMIT 1",
+				"SELECT username, token, personality_title, personality_behavior, alignment, speech_style FROM credentials ORDER BY id DESC LIMIT 1",
 			)
 			.get() as
 			| {
 					username?: string;
 					token?: string;
-					personality?: string;
+					personality_title?: string;
+					personality_behavior?: string;
 					alignment?: string;
 					speech_style?: string;
 			  }
 			| undefined;
-		if (!row || !row.username || !row.token || !row.personality) return null;
+		if (
+			!row ||
+			!row.username ||
+			!row.token ||
+			!row.personality_title ||
+			!row.personality_behavior
+		)
+			return null;
 		return {
 			username: row.username,
 			token: row.token,
-			personality: row.personality as PersonalityType,
+			personality_title: row.personality_title,
+			personality_behavior: row.personality_behavior,
 			alignment: (row.alignment as AlignmentType) ?? "neutral",
 			speech_style: (row.speech_style as SpeechStyleType) ?? "mythic",
 		};
@@ -239,15 +263,24 @@ export class MemoryStore {
 	saveCredentials(
 		username: string,
 		token: string,
-		personality: PersonalityType,
+		personalityTitle: string,
+		personalityBehavior: string,
 		alignment: AlignmentType,
 		speechStyle: SpeechStyleType,
 	): void {
 		this.db
 			.query(
-				"INSERT INTO credentials (ts, username, token, personality, alignment, speech_style) VALUES (?, ?, ?, ?, ?, ?)",
+				"INSERT INTO credentials (ts, username, token, personality_title, personality_behavior, alignment, speech_style) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			)
-			.run(nowIso(), username, token, personality, alignment, speechStyle);
+			.run(
+				nowIso(),
+				username,
+				token,
+				personalityTitle,
+				personalityBehavior,
+				alignment,
+				speechStyle,
+			);
 	}
 
 	appendAction(

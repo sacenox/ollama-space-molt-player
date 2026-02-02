@@ -41,7 +41,6 @@ import {
 import type {
 	AlignmentType,
 	Credentials,
-	PersonalityType,
 	RegistrationOverrides,
 	SpeechStyleType,
 } from "./types";
@@ -77,7 +76,6 @@ const gameState = new GameState();
 const registrationOverrides: RegistrationOverrides = {
 	empire: config.empire ?? undefined,
 	alignment: config.alignment ?? undefined,
-	personality: config.personality ?? undefined,
 	speech_style: config.speechStyle ?? undefined,
 };
 let actionLoopRunning = false;
@@ -102,11 +100,19 @@ async function loadCredentials(): Promise<Credentials | null> {
 async function saveCredentials(
 	username: string,
 	token: string,
-	personality: PersonalityType,
+	personalityTitle: string,
+	personalityBehavior: string,
 	alignment: AlignmentType,
 	speechStyle: SpeechStyleType,
 ): Promise<void> {
-	memory.saveCredentials(username, token, personality, alignment, speechStyle);
+	memory.saveCredentials(
+		username,
+		token,
+		personalityTitle,
+		personalityBehavior,
+		alignment,
+		speechStyle,
+	);
 }
 
 function updateOutput(): void {
@@ -120,7 +126,8 @@ function updateOutput(): void {
 		pois: gameState.worldSnapshot.pois ?? [],
 		nearby: state.nearby ?? [],
 		alignment: gameState.credentials?.alignment,
-		personality: gameState.credentials?.personality,
+		personality_title: gameState.credentials?.personality_title,
+		personality_behavior: gameState.credentials?.personality_behavior,
 		tick: state.currentTick,
 		traveling: gameState.travelInProgress,
 		travelTarget: gameState.lastTravelTarget,
@@ -335,7 +342,8 @@ async function startActionLoop(): Promise<void> {
 				memory,
 				empire: client.state.player?.empire,
 				alignment: gameState.credentials?.alignment,
-				personality: gameState.credentials?.personality,
+				personalityTitle: gameState.credentials?.personality_title,
+				personalityBehavior: gameState.credentials?.personality_behavior,
 				speechStyle: gameState.credentials?.speech_style,
 				lastForumThreadId: gameState.lastForumThreadId,
 				lastForumPostTitle: gameState.lastForumPostTitle,
@@ -528,7 +536,7 @@ client.on<WelcomePayload>("welcome", async (data) => {
 			output,
 			ollama,
 			client,
-			gameState.failedRegistrationNames,
+			gameState.registrationContext,
 			registrationOverrides,
 		);
 	}
@@ -586,7 +594,8 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 			await saveCredentials(
 				gameState.pendingRegistration.username,
 				token,
-				gameState.pendingRegistration.personality,
+				gameState.pendingRegistration.personality_title,
+				gameState.pendingRegistration.personality_behavior,
 				gameState.pendingRegistration.alignment,
 				gameState.pendingRegistration.speech_style,
 			);
@@ -594,7 +603,9 @@ client.on<LoggedInPayload>("logged_in", async (data) => {
 			gameState.credentials = {
 				username: gameState.pendingRegistration.username,
 				token: token,
-				personality: gameState.pendingRegistration.personality,
+				personality_title: gameState.pendingRegistration.personality_title,
+				personality_behavior:
+					gameState.pendingRegistration.personality_behavior,
 				alignment: gameState.pendingRegistration.alignment,
 				speech_style: gameState.pendingRegistration.speech_style,
 			};
@@ -642,49 +653,105 @@ client.on<ErrorPayload>("error", (data) => {
 		shutdown();
 		return;
 	}
-	if (data.code === "username_taken" && gameState.pendingRegistration) {
-		if (gameState.pendingRegistration.username) {
-			gameState.failedRegistrationNames.push(
-				gameState.pendingRegistration.username,
-			);
-		}
-		if (gameState.registrationRetries < gameState.MAX_REGISTRATION_RETRIES) {
-			gameState.registrationRetries += 1;
+	// Handle registration errors (username_taken, empire_restricted, etc.)
+	if (gameState.pendingRegistration) {
+		let shouldRetry = false;
+
+		if (data.code === "username_taken") {
+			if (gameState.pendingRegistration.username) {
+				gameState.registrationContext.failedNames.push(
+					gameState.pendingRegistration.username,
+				);
+			}
+			gameState.registrationContext.usernameError = data.message;
+			// Preserve all prior choices except username
+			gameState.registrationContext.priorChoices = {
+				personality:
+					gameState.pendingRegistration.personality_title &&
+					gameState.pendingRegistration.personality_behavior
+						? {
+								title: gameState.pendingRegistration.personality_title,
+								behavior: gameState.pendingRegistration.personality_behavior,
+							}
+						: undefined,
+				speech_style: gameState.pendingRegistration.speech_style,
+				empire: gameState.pendingRegistration.empire,
+				alignment: gameState.pendingRegistration.alignment,
+			};
+			shouldRetry = true;
 			output.log(
 				formatSystemMessage(
-					"Username taken. Requesting a new registration name...",
+					"Username taken. Requesting a new username...",
 					getCurrentTick(),
 				),
 			);
+		} else if (data.code === "empire_restricted") {
+			gameState.registrationContext.empireError = data.message;
+			// Preserve prior choices except empire
+			gameState.registrationContext.priorChoices = {
+				personality:
+					gameState.pendingRegistration.personality_title &&
+					gameState.pendingRegistration.personality_behavior
+						? {
+								title: gameState.pendingRegistration.personality_title,
+								behavior: gameState.pendingRegistration.personality_behavior,
+							}
+						: undefined,
+				speech_style: gameState.pendingRegistration.speech_style,
+				alignment: gameState.pendingRegistration.alignment,
+				username: gameState.pendingRegistration.username,
+			};
+			shouldRetry = true;
+			output.log(
+				formatSystemMessage(
+					"Empire restricted. Re-prompting with server requirements...",
+					getCurrentTick(),
+				),
+			);
+		}
+
+		if (
+			shouldRetry &&
+			gameState.registrationRetries < gameState.MAX_REGISTRATION_RETRIES
+		) {
+			gameState.registrationRetries += 1;
 			gameState.pendingRegistration = null;
 			runRegistrationFlow(
 				output,
 				ollama,
 				client,
-				gameState.failedRegistrationNames,
+				gameState.registrationContext,
 				registrationOverrides,
 			).then((choice) => {
 				gameState.pendingRegistration = choice;
+				// Clear errors and prior choices after successful retry
+				gameState.registrationContext.empireError = undefined;
+				gameState.registrationContext.usernameError = undefined;
+				gameState.registrationContext.priorChoices = undefined;
 			});
-		} else {
+		} else if (shouldRetry) {
 			output.log(
 				formatSystemMessage(
-					"Username taken repeatedly. Falling back to random name.",
+					"Registration failed repeatedly. Falling back to random values.",
 					getCurrentTick(),
 				),
 			);
 			const fallback = `molt-bot-${Math.floor(Math.random() * 10000)}`;
 			const fallbackEmpire = registrationOverrides.empire ?? "solarian";
 			const fallbackAlignment = registrationOverrides.alignment ?? "neutral";
-			const fallbackPersonality =
-				registrationOverrides.personality ?? "pragmatist";
+			const fallbackPersonalityTitle =
+				registrationOverrides.personality_title ?? "Pragmatist";
+			const fallbackPersonalityBehavior =
+				registrationOverrides.personality_behavior ??
+				"Resourceful survivor who seizes every opportunity, pivots between roles, and thrives where others struggle.";
 			const fallbackSpeechStyle =
 				registrationOverrides.speech_style ?? "mythic";
 			gameState.pendingRegistration = {
 				username: fallback,
 				empire: fallbackEmpire,
 				alignment: fallbackAlignment,
-				personality: fallbackPersonality,
+				personality_title: fallbackPersonalityTitle,
+				personality_behavior: fallbackPersonalityBehavior,
 				speech_style: fallbackSpeechStyle,
 			};
 			client.register(fallback, fallbackEmpire);

@@ -1,8 +1,6 @@
 // Player identity and status panel
 
 import type { Player } from "../../../client/src/types";
-import type { PersonalityType } from "../../actions";
-import { PERSONALITY_ARCHETYPES } from "../../actions";
 import { ALIGNMENT_DESCRIPTIONS } from "../../constants";
 import type { AlignmentType } from "../../types";
 import { PALETTE, THEME } from "../theme";
@@ -16,7 +14,8 @@ import {
 export interface PlayerData {
 	player: Player | null;
 	alignment?: AlignmentType;
-	personality?: PersonalityType;
+	personality_title?: string;
+	personality_behavior?: string;
 	tick: number;
 	currentMission: string | null;
 }
@@ -38,9 +37,8 @@ export function renderPlayerPanel(data: PlayerData): string {
 		lines.push(renderKv("Align", alignInfo.name));
 	}
 
-	if (data.personality) {
-		const info = PERSONALITY_ARCHETYPES[data.personality];
-		lines.push(renderKv("Role", info.name));
+	if (data.personality_title) {
+		lines.push(renderKv("Role", data.personality_title));
 	}
 
 	// Status
