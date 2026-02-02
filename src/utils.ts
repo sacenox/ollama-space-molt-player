@@ -64,3 +64,44 @@ export function detectRepetition(
 	}
 	return null;
 }
+
+export function truncateThinking(text: string, maxChars = 200): string {
+	const trimmed = text.trim();
+
+	// If short enough, return as-is
+	if (trimmed.length <= maxChars) {
+		return trimmed;
+	}
+
+	// Try sentence-based approach
+	const sentences = trimmed.match(/[^.!?]+[.!?]+/g);
+
+	if (sentences && sentences.length > 0) {
+		// Collect sentences from end backwards
+		const collected: string[] = [];
+		let totalLength = 0;
+
+		for (let i = sentences.length - 1; i >= 0; i--) {
+			const sentence = sentences[i].trim();
+			const newLength =
+				totalLength + sentence.length + (collected.length > 0 ? 1 : 0); // +1 for space
+
+			if (newLength > maxChars) {
+				break;
+			}
+
+			collected.unshift(sentence);
+			totalLength = newLength;
+		}
+
+		if (collected.length > 0) {
+			const result = collected.join(" ");
+			const isPartial = collected.length < sentences.length;
+			return isPartial ? `[...] ${result}` : result;
+		}
+	}
+
+	// Fallback: character truncation
+	const excerpt = trimmed.slice(-maxChars).trim();
+	return `[...] ${excerpt}`;
+}

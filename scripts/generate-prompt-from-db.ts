@@ -39,6 +39,7 @@ interface StoredAction {
 	action: string;
 	args: string | null;
 	model_raw: string | null;
+	thinking: string | null;
 }
 
 interface AnalysisResult {
@@ -434,13 +435,13 @@ async function buildPromptContext(
 	// Detect repetition
 	const repetitionWarning = detectRepetition(db, tick);
 
-	// Extract thinking from previous action
+	// Get thinking from previous action
 	const prevAction = db
 		.query(
-			"SELECT model_raw FROM actions WHERE tick < ? ORDER BY tick DESC LIMIT 1",
+			"SELECT thinking FROM actions WHERE tick < ? ORDER BY tick DESC LIMIT 1",
 		)
-		.get(tick) as { model_raw: string | null } | undefined;
-	const lastThinking = extractThinking(prevAction?.model_raw || null);
+		.get(tick) as { thinking: string | null } | undefined;
+	const lastThinking = prevAction?.thinking || null;
 
 	// Build world snapshot
 	const worldSnapshot: WorldSnapshot = {
@@ -1046,7 +1047,7 @@ async function main() {
 	if (args.actionId !== null) {
 		const action = db
 			.query(
-				"SELECT id, ts, tick, action, args, model_raw FROM actions WHERE id = ?",
+				"SELECT id, ts, tick, action, args, model_raw, thinking FROM actions WHERE id = ?",
 			)
 			.get(args.actionId) as StoredAction | undefined;
 
@@ -1060,7 +1061,7 @@ async function main() {
 	} else {
 		actionsToAnalyze = db
 			.query(
-				"SELECT id, ts, tick, action, args, model_raw FROM actions ORDER BY id DESC LIMIT ?",
+				"SELECT id, ts, tick, action, args, model_raw, thinking FROM actions ORDER BY id DESC LIMIT ?",
 			)
 			.all(args.count) as StoredAction[];
 

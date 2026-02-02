@@ -24,6 +24,7 @@ export interface StoredAction {
 	args: string | null;
 	prompt_excerpt: string | null;
 	model_raw: string | null;
+	thinking: string | null;
 }
 
 export interface StoredEvent {
@@ -78,7 +79,8 @@ export class MemoryStore {
         action TEXT NOT NULL,
         args TEXT,
         prompt_excerpt TEXT,
-        model_raw TEXT
+        model_raw TEXT,
+        thinking TEXT
       );
       CREATE TABLE IF NOT EXISTS action_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,10 +256,11 @@ export class MemoryStore {
 		args: unknown,
 		promptExcerpt: string,
 		modelRaw: string,
+		thinking: string | null,
 	): void {
 		this.db
 			.query(
-				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?, ?)",
+				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw, thinking) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			)
 			.run(
 				nowIso(),
@@ -266,6 +269,7 @@ export class MemoryStore {
 				toJson(args),
 				truncate(promptExcerpt),
 				truncate(modelRaw),
+				thinking,
 			);
 	}
 
@@ -275,10 +279,11 @@ export class MemoryStore {
 		args: unknown,
 		promptExcerpt: string,
 		modelRaw: string,
+		thinking: string | null,
 	): number {
 		const result = this.db
 			.query(
-				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw) VALUES (?, ?, ?, ?, ?, ?)",
+				"INSERT INTO actions (ts, tick, action, args, prompt_excerpt, model_raw, thinking) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			)
 			.run(
 				nowIso(),
@@ -287,6 +292,7 @@ export class MemoryStore {
 				toJson(args),
 				truncate(promptExcerpt),
 				truncate(modelRaw),
+				thinking,
 			);
 		return Number(result.lastInsertRowid);
 	}

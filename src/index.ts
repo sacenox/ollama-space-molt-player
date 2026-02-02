@@ -45,7 +45,12 @@ import type {
 	RegistrationOverrides,
 	SpeechStyleType,
 } from "./types";
-import { detectRepetition, isNearbyTarget, sleep } from "./utils";
+import {
+	detectRepetition,
+	isNearbyTarget,
+	sleep,
+	truncateThinking,
+} from "./utils";
 
 const memory = new MemoryStore(config.memoryPath);
 const ollama = new OllamaAgent(
@@ -423,6 +428,7 @@ async function startActionLoop(): Promise<void> {
 				validation.action.args ?? {},
 				promptExcerpt,
 				result.raw,
+				result.thinking ? truncateThinking(result.thinking, 200) : null,
 			);
 			gameState.pendingActionId = actionId;
 			const pendingDelayMs = Math.max(3000, config.tickDelayMs * 2);
