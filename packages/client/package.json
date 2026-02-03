@@ -11,7 +11,9 @@
 		"start": "bun src/index.ts",
 		"strip-comments": "bun ../../scripts/strip-comments.ts"
 	},
-	"dependencies": {},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.25.3"
+	},
 	"devDependencies": {
 		"@types/bun": "latest"
 	}

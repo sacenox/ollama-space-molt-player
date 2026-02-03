@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Server } from "bun";
-import { OllamaClient } from "../src/ollama.ts";
+import { OllamaClient, type ChatMessage } from "../src/ollama.ts";
 
 describe("OllamaClient", () => {
 	let client: OllamaClient;
@@ -15,31 +15,15 @@ describe("OllamaClient", () => {
 		client = new OllamaClient({
 			baseUrl: "http://localhost:11434",
 			model: "qwen3:8b",
-			options: { temperature: 1.2 },
+			options: { temperature: 0.7 },
 			timeout: 8000,
 		});
 		const config = client.getConfig();
 
 		expect(config.baseUrl).toBe("http://localhost:11434");
 		expect(config.model).toBe("qwen3:8b");
-		expect(config.options).toEqual({ temperature: 1.2 });
+		expect(config.options).toEqual({ temperature: 0.7 });
 		expect(config.timeout).toBe(8000);
-	});
-
-	test("should create client with custom options", () => {
-		client = new OllamaClient({
-			baseUrl: "http://custom:9999",
-			model: "custom-model",
-			options: { temperature: 0.5, thinking: true },
-			timeout: 5000,
-		});
-
-		const config = client.getConfig();
-
-		expect(config.baseUrl).toBe("http://custom:9999");
-		expect(config.model).toBe("custom-model");
-		expect(config.options).toEqual({ temperature: 0.5, thinking: true });
-		expect(config.timeout).toBe(5000);
 	});
 
 	test("should update config", () => {
@@ -56,15 +40,19 @@ describe("OllamaClient", () => {
 		expect(config.options).toEqual({ temperature: 0.8 });
 	});
 
-	test("should make successful generation request", async () => {
+	test("should make successful chat request", async () => {
 		mockServer = Bun.serve({
 			port: 0,
 			fetch: async (req) => {
 				const body = await req.json();
+				expect(body.messages).toBeDefined();
 				return Response.json({
 					model: body.model,
 					created_at: new Date().toISOString(),
-					response: "test response",
+					message: {
+						role: "assistant",
+						content: "test response",
+					},
 					done: true,
 				});
 			},
@@ -77,19 +65,32 @@ describe("OllamaClient", () => {
 			timeout: 8000,
 		});
 
-		const result = await client.generate("test prompt");
-		expect(result.response).toBe("test response");
+		const messages: ChatMessage[] = [{ role: "user", content: "test prompt" }];
+		const result = await client.chat(messages);
+		expect(result.content).toBe("test response");
+		expect(result.toolCalls).toEqual([]);
 		expect(result.thinking).toBeUndefined();
 	});
 
-	test("should trim response", async () => {
+	test("should handle tool calls in response", async () => {
 		mockServer = Bun.serve({
 			port: 0,
 			fetch: async () => {
 				return Response.json({
 					model: "test",
 					created_at: new Date().toISOString(),
-					response: "  trimmed  \n",
+					message: {
+						role: "assistant",
+						content: "",
+						tool_calls: [
+							{
+								function: {
+									name: "get_status",
+									arguments: {},
+								},
+							},
+						],
+					},
 					done: true,
 				});
 			},
@@ -102,8 +103,51 @@ describe("OllamaClient", () => {
 			timeout: 8000,
 		});
 
-		const result = await client.generate("test");
-		expect(result.response).toBe("trimmed");
+		const messages: ChatMessage[] = [{ role: "user", content: "check status" }];
+		const result = await client.chat(messages);
+
+		expect(result.toolCalls.length).toBe(1);
+		expect(result.toolCalls[0].function.name).toBe("get_status");
+	});
+
+	test("should pass tools to request", async () => {
+		let capturedRequest: { tools?: unknown[] } | undefined;
+
+		mockServer = Bun.serve({
+			port: 0,
+			fetch: async (req) => {
+				capturedRequest = await req.json();
+				return Response.json({
+					model: "test",
+					created_at: new Date().toISOString(),
+					message: { role: "assistant", content: "ok" },
+					done: true,
+				});
+			},
+		});
+
+		client = new OllamaClient({
+			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
+			timeout: 8000,
+		});
+
+		const tools = [
+			{
+				type: "function" as const,
+				function: {
+					name: "test_tool",
+					description: "A test tool",
+					parameters: { type: "object", properties: {}, required: [] },
+				},
+			},
+		];
+
+		await client.chat([{ role: "user", content: "test" }], tools);
+
+		expect(capturedRequest?.tools).toBeDefined();
+		expect(capturedRequest?.tools?.length).toBe(1);
 	});
 
 	test("should handle timeout", async () => {
@@ -111,7 +155,7 @@ describe("OllamaClient", () => {
 			port: 0,
 			fetch: async () => {
 				await new Promise((resolve) => setTimeout(resolve, 200));
-				return Response.json({ response: "late" });
+				return Response.json({ message: { content: "late" } });
 			},
 		});
 
@@ -122,7 +166,7 @@ describe("OllamaClient", () => {
 			timeout: 100,
 		});
 
-		await expect(client.generate("test")).rejects.toThrow(/timed out/);
+		await expect(client.chat([{ role: "user", content: "test" }])).rejects.toThrow(/timed out/);
 	});
 
 	test("should handle HTTP errors", async () => {
@@ -140,15 +184,20 @@ describe("OllamaClient", () => {
 			timeout: 8000,
 		});
 
-		await expect(client.generate("test")).rejects.toThrow(/status 500/);
+		await expect(client.chat([{ role: "user", content: "test" }])).rejects.toThrow(/status 500/);
 	});
 
-	test("should handle missing response field", async () => {
+	test("should extract thinking from response content", async () => {
 		mockServer = Bun.serve({
 			port: 0,
-			fetch: () => {
+			fetch: async () => {
 				return Response.json({
 					model: "test",
+					created_at: new Date().toISOString(),
+					message: {
+						role: "assistant",
+						content: "<think>reasoning here</think>\nfinal answer",
+					},
 					done: true,
 				});
 			},
@@ -161,78 +210,23 @@ describe("OllamaClient", () => {
 			timeout: 8000,
 		});
 
-		await expect(client.generate("test")).rejects.toThrow(/missing 'response' field/);
+		const result = await client.chat([{ role: "user", content: "test" }]);
+		expect(result.content).toBe("final answer");
+		expect(result.thinking).toBe("reasoning here");
 	});
 
-	test("should pass options with thinking enabled", async () => {
-		let capturedRequest: { options: Record<string, unknown> } | null = null;
-
-		mockServer = Bun.serve({
-			port: 0,
-			fetch: async (req) => {
-				capturedRequest = await req.json();
-				return Response.json({
-					model: "test",
-					created_at: new Date().toISOString(),
-					response: "response",
-					done: true,
-				});
-			},
-		});
-
-		client = new OllamaClient({
-			baseUrl: `http://localhost:${mockServer.port}`,
-			model: "test-model",
-			options: { thinking: true, temperature: 1.2 },
-			timeout: 8000,
-		});
-
-		await client.generate("test");
-
-		expect(capturedRequest).not.toBeNull();
-		expect(capturedRequest!.options.thinking).toBe(true);
-		expect(capturedRequest!.options.temperature).toBe(1.2);
-	});
-
-	test("should pass options without thinking", async () => {
-		let capturedRequest: { options: Record<string, unknown> } | null = null;
-
-		mockServer = Bun.serve({
-			port: 0,
-			fetch: async (req) => {
-				capturedRequest = await req.json();
-				return Response.json({
-					model: "test",
-					created_at: new Date().toISOString(),
-					response: "response",
-					done: true,
-				});
-			},
-		});
-
-		client = new OllamaClient({
-			baseUrl: `http://localhost:${mockServer.port}`,
-			model: "test-model",
-			options: { temperature: 0.8 },
-			timeout: 8000,
-		});
-
-		await client.generate("test");
-
-		expect(capturedRequest).not.toBeNull();
-		expect(capturedRequest!.options.thinking).toBeUndefined();
-		expect(capturedRequest!.options.temperature).toBe(0.8);
-	});
-
-	test("should return thinking content when provided", async () => {
+	test("should handle empty content", async () => {
 		mockServer = Bun.serve({
 			port: 0,
 			fetch: async () => {
 				return Response.json({
 					model: "test",
 					created_at: new Date().toISOString(),
-					response: "final answer",
-					thinking: "reasoning process here",
+					message: {
+						role: "assistant",
+						content: "",
+						tool_calls: [{ function: { name: "mine", arguments: {} } }],
+					},
 					done: true,
 				});
 			},
@@ -241,89 +235,12 @@ describe("OllamaClient", () => {
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
 			model: "test-model",
-			options: { thinking: true },
+			options: {},
 			timeout: 8000,
 		});
 
-		const result = await client.generate("test");
-		expect(result.response).toBe("final answer");
-		expect(result.thinking).toBe("reasoning process here");
-	});
-
-	test("should extract thinking from response tags", async () => {
-		mockServer = Bun.serve({
-			port: 0,
-			fetch: async () => {
-				return Response.json({
-					model: "test",
-					created_at: new Date().toISOString(),
-					response:
-						'<think>First sentence. Second sentence. Third sentence.</think>\n{"type":"mine"}',
-					done: true,
-				});
-			},
-		});
-
-		client = new OllamaClient({
-			baseUrl: `http://localhost:${mockServer.port}`,
-			model: "test-model",
-			options: { thinking: true },
-			timeout: 8000,
-		});
-
-		const result = await client.generate("test");
-		expect(result.response).toBe('{"type":"mine"}');
-		expect(result.thinking).toBe("First sentence. Second sentence. Third sentence.");
-	});
-
-	test("should prefer Ollama thinking over response tags", async () => {
-		mockServer = Bun.serve({
-			port: 0,
-			fetch: async () => {
-				return Response.json({
-					model: "test",
-					created_at: new Date().toISOString(),
-					response: '<think>Tagged thinking</think>\n{"type":"scan"}',
-					thinking: "Ollama thinking",
-					done: true,
-				});
-			},
-		});
-
-		client = new OllamaClient({
-			baseUrl: `http://localhost:${mockServer.port}`,
-			model: "test-model",
-			options: { thinking: true },
-			timeout: 8000,
-		});
-
-		const result = await client.generate("test");
-		expect(result.response).toBe('{"type":"scan"}');
-		expect(result.thinking).toBe("Ollama thinking");
-	});
-
-	test("should ignore empty thinking tags", async () => {
-		mockServer = Bun.serve({
-			port: 0,
-			fetch: async () => {
-				return Response.json({
-					model: "test",
-					created_at: new Date().toISOString(),
-					response: '<think>\n\t\n</think>\n{"type":"dock"}',
-					done: true,
-				});
-			},
-		});
-
-		client = new OllamaClient({
-			baseUrl: `http://localhost:${mockServer.port}`,
-			model: "test-model",
-			options: { thinking: true },
-			timeout: 8000,
-		});
-
-		const result = await client.generate("test");
-		expect(result.response).toBe('{"type":"dock"}');
-		expect(result.thinking).toBeUndefined();
+		const result = await client.chat([{ role: "user", content: "test" }]);
+		expect(result.content).toBe("");
+		expect(result.toolCalls.length).toBe(1);
 	});
 });

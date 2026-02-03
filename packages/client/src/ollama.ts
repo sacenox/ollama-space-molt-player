@@ -1,3 +1,5 @@
+import type { OllamaTool } from "./mcp-client.ts";
+
 export interface OllamaConfig {
 	baseUrl: string;
 	model: string;
@@ -5,23 +7,42 @@ export interface OllamaConfig {
 	timeout: number;
 }
 
-export interface OllamaRequest {
-	model: string;
-	prompt: string;
-	stream: boolean;
-	options: Record<string, unknown>;
+export interface ChatMessage {
+	role: "system" | "user" | "assistant" | "tool";
+	content: string;
+	tool_calls?: ToolCall[];
 }
 
-export interface OllamaResponse {
+export interface ToolCall {
+	function: {
+		name: string;
+		arguments: Record<string, unknown>;
+	};
+}
+
+interface OllamaChatRequest {
+	model: string;
+	messages: ChatMessage[];
+	tools?: OllamaTool[];
+	stream: boolean;
+	options?: Record<string, unknown>;
+}
+
+interface OllamaChatResponse {
 	model: string;
 	created_at: string;
-	response: string;
-	thinking?: string;
+	message: {
+		role: string;
+		content: string;
+		tool_calls?: ToolCall[];
+	};
 	done: boolean;
+	done_reason?: string;
 }
 
-export interface GenerateResult {
-	response: string;
+export interface ChatResult {
+	content: string;
+	toolCalls: ToolCall[];
 	thinking?: string;
 }
 
@@ -32,15 +53,19 @@ export class OllamaClient {
 		this.config = config;
 	}
 
-	async generate(prompt: string): Promise<GenerateResult> {
-		const url = `${this.config.baseUrl}/api/generate`;
+	async chat(messages: ChatMessage[], tools?: OllamaTool[]): Promise<ChatResult> {
+		const url = `${this.config.baseUrl}/api/chat`;
 
-		const request: OllamaRequest = {
+		const request: OllamaChatRequest = {
 			model: this.config.model,
-			prompt,
+			messages,
 			stream: false,
 			options: this.config.options,
 		};
+
+		if (tools && tools.length > 0) {
+			request.tools = tools;
+		}
 
 		try {
 			const response = await fetch(url, {
@@ -56,22 +81,17 @@ export class OllamaClient {
 				throw new Error(`Ollama request failed with status ${response.status}`);
 			}
 
-			const data = (await response.json()) as OllamaResponse;
+			const data = (await response.json()) as OllamaChatResponse;
 
-			if (!data.response) {
-				throw new Error("Ollama response missing 'response' field");
-			}
+			const content = data.message?.content || "";
+			const toolCalls = data.message?.tool_calls || [];
 
-			const { cleanResponse, thinking: extractedThinking } = extractThinkingFromResponse(
-				data.response,
-			);
-			const trimmedThinking = data.thinking?.trim();
-			const finalThinking =
-				trimmedThinking && trimmedThinking.length > 0 ? trimmedThinking : extractedThinking;
+			const { cleanContent, thinking } = this.extractThinking(content);
 
 			return {
-				response: cleanResponse.trim(),
-				thinking: finalThinking,
+				content: cleanContent,
+				toolCalls,
+				thinking,
 			};
 		} catch (error) {
 			if (error instanceof Error) {
@@ -84,6 +104,17 @@ export class OllamaClient {
 		}
 	}
 
+	private extractThinking(content: string): { cleanContent: string; thinking?: string } {
+		const thinkPattern = /<think>([\s\S]*?)<\/think>/g;
+		const matches = Array.from(content.matchAll(thinkPattern));
+		const blocks = matches
+			.map((match) => match[1]?.trim() || "")
+			.filter((block) => block.length > 0);
+		const thinking = blocks.length > 0 ? blocks.join("\n") : undefined;
+		const cleanContent = content.replace(thinkPattern, "").trim();
+		return { cleanContent, thinking };
+	}
+
 	getConfig(): OllamaConfig {
 		return { ...this.config };
 	}
@@ -91,16 +122,4 @@ export class OllamaClient {
 	updateConfig(config: Partial<OllamaConfig>): void {
 		this.config = { ...this.config, ...config };
 	}
-}
-
-function extractThinkingFromResponse(response: string): {
-	cleanResponse: string;
-	thinking: string | undefined;
-} {
-	const thinkPattern = /<think>([\s\S]*?)<\/think>/g;
-	const matches = Array.from(response.matchAll(thinkPattern));
-	const blocks = matches.map((match) => match[1]?.trim() || "").filter((block) => block.length > 0);
-	const thinking = blocks.length > 0 ? blocks.join("\n") : undefined;
-	const cleanResponse = response.replace(thinkPattern, "").trim();
-	return { cleanResponse, thinking };
 }
