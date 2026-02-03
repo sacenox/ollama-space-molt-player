@@ -74,15 +74,6 @@ export class GameClient {
 
 		await this.ws.connect();
 		this.isRunning = true;
-
-		const activeUsername = this.db.getActiveUsername();
-		if (activeUsername) {
-			console.log(`[${this.config.instanceId}] Auto-login as ${activeUsername.username}`);
-			this.ws.send({
-				type: "login",
-				payload: { username: activeUsername.username, token: activeUsername.token },
-			});
-		}
 	}
 
 	stop(): void {
@@ -160,13 +151,22 @@ export class GameClient {
 		this.startWatchdog();
 
 		if (this.isRunning) {
-			await this.processTick().catch((error) => {
-				console.error(`[${this.config.instanceId}] Initial tick processing error:`, error);
-				this.db.saveMessage(this.currentTick, "client", {
-					error: "Initial tick processing failed",
-					code: "TICK_PROCESSING_ERROR",
+			const activeUsername = this.db.getActiveUsername();
+			if (activeUsername) {
+				console.log(`[${this.config.instanceId}] Auto-login as ${activeUsername.username}`);
+				this.ws.send({
+					type: "login",
+					payload: { username: activeUsername.username, token: activeUsername.token },
 				});
-			});
+			} else {
+				await this.processTick().catch((error) => {
+					console.error(`[${this.config.instanceId}] Initial tick processing error:`, error);
+					this.db.saveMessage(this.currentTick, "client", {
+						error: "Initial tick processing failed",
+						code: "TICK_PROCESSING_ERROR",
+					});
+				});
+			}
 		}
 	}
 
