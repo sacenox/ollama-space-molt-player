@@ -83,9 +83,10 @@ export class GameClient {
 
 	async stop(): Promise<void> {
 		this.running = false;
+		// Log before closing DB since getLogContext() queries it
+		logClientEvent(this.getLogContext(), "Client stopping");
 		await this.mcp.disconnect();
 		this.db.close();
-		logClientEvent(this.getLogContext(), "Client stopped");
 	}
 
 	private async initializeWithAccount(account: ResolvedAccount): Promise<void> {
@@ -203,6 +204,13 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 		while (iterations < MAX_TOOL_ITERATIONS) {
 			iterations++;
 
+			if (iterations === 1) {
+				logClientEvent(this.getLogContext(), "Round starting", {
+					messages: this.messages.length,
+					tools: this.tools.length,
+				});
+			}
+
 			const result = await this.ollama.chat(this.messages, this.tools);
 
 			if (result.thinking) {
@@ -224,6 +232,17 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 					logClientEvent(this.getLogContext(), "LLM response", { content: result.content });
 					this.db.saveMessage(Date.now(), "client", { response: result.content });
 					this.messages.push({ role: "assistant", content: result.content });
+				} else {
+					// Empty response with no tool calls - LLM is stuck
+					logClientEvent(this.getLogContext(), "LLM returned empty response, nudging");
+					this.messages.push({
+						role: "user",
+						content:
+							"You didn't take any action. Use your available tools to interact with the game. " +
+							"Try get_status() to see your current state, or get_notifications() to check for messages.",
+					});
+					// Don't break - continue the loop to give LLM another chance with the nudge
+					continue;
 				}
 				break;
 			}
