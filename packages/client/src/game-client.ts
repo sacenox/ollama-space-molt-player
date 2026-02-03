@@ -61,6 +61,7 @@ export class GameClient {
 		this.tools = this.mcp.getOllamaTools();
 		logClientEvent(this.getLogContext(), "MCP connected", { tool_count: this.tools.length });
 
+
 		const username = this.db.getActiveUsername();
 
 		if (username) {
@@ -211,7 +212,35 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 	}
 
 	private async executeToolCall(toolCall: ToolCall): Promise<void> {
-		const { name, arguments: args } = toolCall.function;
+		const { name, arguments: rawArgs } = toolCall.function;
+
+		// Ollama sometimes returns arguments as a JSON string instead of parsed object
+		let args: Record<string, unknown>;
+		if (typeof rawArgs === "string") {
+			try {
+				args = JSON.parse(rawArgs);
+			} catch (error) {
+				// Malformed JSON from LLM - log error and inform LLM via tool result
+				const errorMsg = `Failed to parse tool arguments: ${error instanceof Error ? error.message : "Invalid JSON"}`;
+				logClientError(this.getLogContext(), `Tool ${name} argument parse error`, {
+					rawArgs,
+					error: errorMsg,
+				});
+
+				// Push error as tool result so LLM gets feedback
+				this.messages.push({
+					role: "tool",
+					name,
+					content: JSON.stringify({
+						error: errorMsg,
+						hint: "Arguments must be valid JSON. Check syntax and try again.",
+					}),
+				});
+				return;
+			}
+		} else {
+			args = rawArgs;
+		}
 
 		logToolCall(this.getLogContext(), name, args);
 
@@ -233,6 +262,7 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 
 		this.messages.push({
 			role: "tool",
+			name,
 			content: JSON.stringify(result.content),
 		});
 	}
@@ -339,6 +369,7 @@ Respond with ONLY the character prompt, no explanations.`,
 				} else if (data.tool && data.content !== undefined) {
 					this.messages.push({
 						role: "tool",
+						name: data.tool,
 						content: JSON.stringify(data.content),
 					});
 				} else if (data.response) {

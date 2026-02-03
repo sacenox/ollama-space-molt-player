@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
+import { TOOL_SCHEMA_PATCHES } from "./tool-schemas.ts";
 
 export interface OllamaTool {
 	type: "function";
@@ -62,6 +63,18 @@ export class MCPClient {
 	private convertToOllamaTool(mcpTool: MCPTool): OllamaTool {
 		const inputSchema = mcpTool.inputSchema || { type: "object", properties: {}, required: [] };
 
+		// Get server-provided schema
+		let properties = (inputSchema.properties as Record<string, unknown>) || {};
+		let required = (inputSchema.required as string[]) || [];
+
+		// Apply local schema patches if server schema is empty
+		// (SpaceMolt MCP server doesn't provide parameter schemas)
+		const patch = TOOL_SCHEMA_PATCHES[mcpTool.name];
+		if (patch && Object.keys(properties).length === 0) {
+			properties = patch.properties;
+			required = patch.required;
+		}
+
 		return {
 			type: "function",
 			function: {
@@ -69,8 +82,8 @@ export class MCPClient {
 				description: mcpTool.description || "",
 				parameters: {
 					type: inputSchema.type as string,
-					properties: (inputSchema.properties as Record<string, unknown>) || {},
-					required: (inputSchema.required as string[]) || [],
+					properties,
+					required,
 				},
 			},
 		};
