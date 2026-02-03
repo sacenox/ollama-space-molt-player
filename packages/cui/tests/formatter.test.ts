@@ -19,7 +19,7 @@ describe("truncateLine", () => {
 	test("truncates long lines with ellipsis", () => {
 		const longLine = "x".repeat(400);
 		const result = truncateLine(longLine);
-		expect(result.length).toBe(303); // 300 + "..."
+		expect(result.length).toBe(303);
 		expect(result.endsWith("...")).toBe(true);
 	});
 });
@@ -34,7 +34,7 @@ describe("formatMultiline", () => {
 	test("truncates to 5 lines in normal mode", () => {
 		const text = Array(10).fill("line").join("\n");
 		const result = formatMultiline(text, false);
-		// First line + truncation message + last 3 lines = 5 lines
+
 		expect(result.length).toBe(5);
 		expect(result[1]).toContain("more lines");
 	});

@@ -11,7 +11,7 @@ export interface ChatMessage {
 	role: "system" | "user" | "assistant" | "tool";
 	content: string;
 	tool_calls?: ToolCall[];
-	name?: string; // Tool name for tool result messages
+	name?: string;
 }
 
 export interface ToolCall {

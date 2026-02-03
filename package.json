@@ -6,11 +6,10 @@
 		"packages/*"
 	],
 	"scripts": {
-		"check": "bun run check:format && bun run strip-comments && bun run check:lint && bun run check:test",
+		"check": "bun run check:format && bun run check:lint && bun run check:test",
 		"check:format": "prettier --write .",
 		"check:lint": "tsc --noEmit",
 		"check:test": "bun test",
-		"strip-comments": "bun scripts/strip-comments.ts",
 		"cli": "bun run --filter @spacemolt/client start"
 	},
 	"devDependencies": {

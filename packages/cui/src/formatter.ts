@@ -1,16 +1,8 @@
-/**
- * Formatting utilities for console output.
- * Handles truncation, masking, and data display.
- */
-
 const DETAIL_LINE_MAX_LENGTH = 300;
 const VALUE_MAX_LENGTH = 100;
 const MAX_LINES_NORMAL = 4;
 const MAX_MULTILINE_NORMAL = 5;
 
-/**
- * Format detail lines for console output.
- */
 export function formatDetailLines(details: unknown, verbose: boolean): string[] {
 	if (details === undefined || details === null) {
 		return [];
@@ -21,9 +13,6 @@ export function formatDetailLines(details: unknown, verbose: boolean): string[] 
 	return formatPayloadLines(details, "", verbose, { current: 0 });
 }
 
-/**
- * Format multiline text with optional truncation.
- */
 export function formatMultiline(text: string, verbose: boolean): string[] {
 	const lines = text.split("\n");
 	const truncated =
@@ -33,9 +22,6 @@ export function formatMultiline(text: string, verbose: boolean): string[] {
 	return truncated.map((line) => truncateLine(line));
 }
 
-/**
- * Truncate a single line to max length.
- */
 export function truncateLine(line: string): string {
 	if (line.length <= DETAIL_LINE_MAX_LENGTH) {
 		return line;
@@ -43,9 +29,6 @@ export function truncateLine(line: string): string {
 	return `${line.substring(0, DETAIL_LINE_MAX_LENGTH)}...`;
 }
 
-/**
- * Format payload object into display lines.
- */
 export function formatPayloadLines(
 	payload: unknown,
 	indent: string,
@@ -91,7 +74,8 @@ export function formatPayloadLines(
 				lines.push(...formatPayloadLines(value, `${indent}  `, verbose, lineCount));
 			}
 		} else if (typeof value === "string") {
-			const truncated = value.length > VALUE_MAX_LENGTH ? `${value.substring(0, VALUE_MAX_LENGTH)}...` : value;
+			const truncated =
+				value.length > VALUE_MAX_LENGTH ? `${value.substring(0, VALUE_MAX_LENGTH)}...` : value;
 			lines.push(`${indent}${key}: ${truncated}`);
 			lineCount.current++;
 		} else {
@@ -103,9 +87,6 @@ export function formatPayloadLines(
 	return lines.map((line) => truncateLine(line));
 }
 
-/**
- * Mask sensitive data (passwords, tokens, etc.) in payloads.
- */
 export function maskSensitiveData(payload: unknown): unknown {
 	if (payload === null || payload === undefined) {
 		return payload;
@@ -133,9 +114,6 @@ export function maskSensitiveData(payload: unknown): unknown {
 	return result;
 }
 
-/**
- * Format thinking text with optional truncation.
- */
 export function formatThinking(thinking: string, verbose: boolean): string {
 	if (verbose) {
 		return thinking;
@@ -151,9 +129,6 @@ export function formatThinking(thinking: string, verbose: boolean): string {
 	return `${first} [... ${omittedCount} sentences omitted ...] ${lastTwo.join(" ")}`.trim();
 }
 
-/**
- * Split text into sentences.
- */
 export function splitSentences(text: string): string[] {
 	const normalized = text.replace(/\s+/g, " ").trim();
 	if (!normalized) {
@@ -166,9 +141,6 @@ export function splitSentences(text: string): string[] {
 	return matches.map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 0);
 }
 
-/**
- * Normalize error details for logging.
- */
 export function normalizeErrorDetails(details: unknown): unknown {
 	if (details instanceof Error) {
 		return {

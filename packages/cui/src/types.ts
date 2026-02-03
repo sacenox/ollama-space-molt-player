@@ -1,7 +1,3 @@
-/**
- * Types for the Console User Interface (CUI) package.
- */
-
 export interface LogContext {
 	tick: number;
 	instanceId: string;
@@ -16,6 +12,6 @@ export interface ToolResult {
 	success: boolean;
 	content: unknown;
 	error?: string;
-	/** Summarized version of content (what LLM sees) */
+
 	summarized?: unknown;
 }

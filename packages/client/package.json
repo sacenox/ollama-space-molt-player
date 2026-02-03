@@ -4,12 +4,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"check": "bun run strip-comments && bun run check:format && bun run check:lint && bun run check:test",
+		"check": "bun run check:format && bun run check:lint && bun run check:test",
 		"check:format": "prettier --write .",
 		"check:lint": "tsc --noEmit",
 		"check:test": "bun test",
-		"start": "bun src/index.ts",
-		"strip-comments": "bun ../../scripts/strip-comments.ts"
+		"start": "bun src/index.ts"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.25.3",

@@ -63,12 +63,9 @@ export class MCPClient {
 	private convertToOllamaTool(mcpTool: MCPTool): OllamaTool {
 		const inputSchema = mcpTool.inputSchema || { type: "object", properties: {}, required: [] };
 
-		// Get server-provided schema
 		let properties = (inputSchema.properties as Record<string, unknown>) || {};
 		let required = (inputSchema.required as string[]) || [];
 
-		// Apply local schema patches if server schema is empty
-		// (SpaceMolt MCP server doesn't provide parameter schemas)
 		const patch = TOOL_SCHEMA_PATCHES[mcpTool.name];
 		if (patch && Object.keys(properties).length === 0) {
 			properties = patch.properties;

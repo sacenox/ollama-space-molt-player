@@ -1,7 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Layout preview test - shows the basic layout structure at different sizes
- */
 
 import React from "react";
 import { Box, Text } from "ink";
@@ -13,10 +10,6 @@ interface LayoutPreviewProps {
 	height: number;
 }
 
-/**
- * Basic layout structure preview
- * Shows header, main panels (actions, social), sidebar, and server messages
- */
 function LayoutPreview({ width, height }: LayoutPreviewProps) {
 	const headerHeight = layout.headerHeight;
 	const contentHeight = height - headerHeight - 2;
@@ -25,7 +18,6 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 
 	return (
 		<Box flexDirection="column" width={width} height={height}>
-			{/* Header */}
 			<Box borderStyle="double" borderColor={colors.primary} height={headerHeight} width={width}>
 				<Text bold color={colors.primary}>
 					{" "}
@@ -33,11 +25,8 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 				</Text>
 			</Box>
 
-			{/* Main content area */}
 			<Box flexDirection="row" height={contentHeight}>
-				{/* Left main panels */}
 				<Box flexDirection="column" width={mainWidth}>
-					{/* Player Actions Panel */}
 					<Box
 						borderStyle="single"
 						borderColor={colors.border}
@@ -53,7 +42,6 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 						</Box>
 					</Box>
 
-					{/* Social Panel */}
 					<Box
 						borderStyle="single"
 						borderColor={colors.border}
@@ -70,9 +58,7 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 					</Box>
 				</Box>
 
-				{/* Right sidebar */}
 				<Box flexDirection="column" width={sidebarWidth}>
-					{/* Ship Status */}
 					<Box
 						borderStyle="single"
 						borderColor={colors.border}
@@ -89,7 +75,6 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 						</Box>
 					</Box>
 
-					{/* Server Messages */}
 					<Box
 						borderStyle="single"
 						borderColor={colors.border}
@@ -110,7 +95,6 @@ function LayoutPreview({ width, height }: LayoutPreviewProps) {
 	);
 }
 
-// Run tests with different terminal sizes
 runTests("Layout Preview Tests", [
 	{
 		name: "Standard Terminal (120x30)",

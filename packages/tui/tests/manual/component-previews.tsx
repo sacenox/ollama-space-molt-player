@@ -1,17 +1,10 @@
 #!/usr/bin/env bun
-/**
- * Individual component preview tests
- * Tests each component in isolation at different sizes
- */
 
 import React from "react";
 import { Box, Text } from "ink";
 import { runTests, createMockData } from "./test-harness.tsx";
 import { colors, boxChars, ascii } from "../../src/theme.ts";
 
-/**
- * Header Component Preview
- */
 function HeaderPreview({
 	tick,
 	loopState,
@@ -95,9 +88,6 @@ function PlayerActionsPanelPreview({ width, height }: { width: number; height: n
 	);
 }
 
-/**
- * Social Panel Preview
- */
 function SocialPanelPreview({ width, height }: { width: number; height: number }) {
 	return (
 		<Box

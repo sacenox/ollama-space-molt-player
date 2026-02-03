@@ -9,12 +9,7 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
-		"types": [
-			"bun"
-		]
+		"types": ["bun"]
 	},
-	"exclude": [
-		"packages/tui",
-		"packages/cui"
-	]
+	"exclude": ["packages/tui", "packages/cui"]
 }

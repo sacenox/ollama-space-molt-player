@@ -1,13 +1,3 @@
-/**
- * Schema patches for SpaceMolt MCP tools.
- *
- * The SpaceMolt MCP server returns tools with empty inputSchema.properties,
- * which causes smaller LLMs to guess parameter names incorrectly.
- * These patches provide the correct parameter definitions based on the API docs.
- *
- * Source: https://spacemolt.com/api.md
- */
-
 export interface SchemaProperties {
 	[key: string]: {
 		type: string;
@@ -21,12 +11,7 @@ export interface SchemaPatch {
 	required: string[];
 }
 
-/**
- * Schema patches for tools with parameters.
- * Tools not listed here have no parameters or use defaults.
- */
 export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
-	// Authentication
 	register: {
 		properties: {
 			username: { type: "string", description: "Username (3-20 chars, alphanumeric)" },
@@ -46,7 +31,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["username", "password"],
 	},
 
-	// Navigation
 	travel: {
 		properties: {
 			target_poi: { type: "string", description: "POI ID to travel to (e.g., 'sol_belt')" },
@@ -60,7 +44,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["target_system"],
 	},
 
-	// Combat
 	attack: {
 		properties: {
 			target_id: { type: "string", description: "Player ID to attack" },
@@ -81,7 +64,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["enable"],
 	},
 
-	// Trading
 	buy: {
 		properties: {
 			listing_id: { type: "string", description: "Market listing ID" },
@@ -118,7 +100,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["listing_id", "quantity"],
 	},
 
-	// Player-to-Player Trading
 	trade_offer: {
 		properties: {
 			target_id: { type: "string", description: "Target player ID" },
@@ -148,7 +129,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["trade_id"],
 	},
 
-	// Wrecks
 	loot_wreck: {
 		properties: {
 			wreck_id: { type: "string", description: "Wreck ID" },
@@ -164,7 +144,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["wreck_id"],
 	},
 
-	// Ship Management
 	buy_ship: {
 		properties: {
 			ship_class: { type: "string", description: "Ship class ID to purchase" },
@@ -185,7 +164,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["slot_idx"],
 	},
 
-	// Crafting
 	craft: {
 		properties: {
 			recipe_id: { type: "string", description: "Recipe ID to craft" },
@@ -193,7 +171,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["recipe_id"],
 	},
 
-	// Chat
 	chat: {
 		properties: {
 			channel: {
@@ -207,7 +184,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["channel", "content"],
 	},
 
-	// Factions
 	create_faction: {
 		properties: {
 			name: { type: "string", description: "Faction name" },
@@ -263,7 +239,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["faction_id"],
 	},
 
-	// Faction Diplomacy
 	faction_set_ally: {
 		properties: {
 			target_faction_id: { type: "string", description: "Faction ID to ally with" },
@@ -297,7 +272,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["target_faction_id"],
 	},
 
-	// Insurance
 	buy_insurance: {
 		properties: {
 			coverage_percent: { type: "number", description: "Coverage percentage (50-100)" },
@@ -305,7 +279,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["coverage_percent"],
 	},
 
-	// Player Settings
 	set_status: {
 		properties: {
 			status_message: { type: "string", description: "Status message" },
@@ -327,7 +300,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["anonymous"],
 	},
 
-	// Information Queries
 	get_system: {
 		properties: {
 			system_id: { type: "string", description: "System ID (optional, defaults to current)" },
@@ -347,7 +319,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: [],
 	},
 
-	// Maps
 	create_map: {
 		properties: {
 			name: { type: "string", description: "Map document name" },
@@ -363,7 +334,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["map_item_id"],
 	},
 
-	// Notes
 	create_note: {
 		properties: {
 			title: { type: "string", description: "Note title (max 100 chars)" },
@@ -385,7 +355,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["note_id"],
 	},
 
-	// Base Building
 	build_base: {
 		properties: {
 			name: { type: "string", description: "Base name (max 32 chars)" },
@@ -401,7 +370,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["name"],
 	},
 
-	// Base Raiding
 	attack_base: {
 		properties: {
 			base_id: { type: "string", description: "Base ID to attack" },
@@ -424,7 +392,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["wreck_id"],
 	},
 
-	// Drones
 	deploy_drone: {
 		properties: {
 			drone_item_id: {
@@ -455,7 +422,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["command"],
 	},
 
-	// Forum
 	forum_list: {
 		properties: {
 			page: { type: "number", description: "Page number" },
@@ -504,7 +470,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["reply_id"],
 	},
 
-	// Captain's Log
 	captains_log_add: {
 		properties: {
 			entry: { type: "string", description: "Log entry text (max 1KB)" },
@@ -518,7 +483,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["index"],
 	},
 
-	// Notifications (MCP only)
 	get_notifications: {
 		properties: {
 			limit: { type: "number", description: "Max notifications (default 50)" },
@@ -531,7 +495,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: [],
 	},
 
-	// Jettison
 	jettison: {
 		properties: {
 			item_id: { type: "string", description: "Item ID to jettison" },
@@ -540,7 +503,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["item_id", "quantity"],
 	},
 
-	// Friends
 	add_friend: {
 		properties: {
 			player_id: { type: "string", description: "Player ID to add as friend" },
@@ -566,7 +528,6 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 		required: ["player_id"],
 	},
 
-	// Missions
 	accept_mission: {
 		properties: {
 			mission_id: { type: "string", description: "Mission ID to accept" },

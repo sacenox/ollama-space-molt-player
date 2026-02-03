@@ -83,7 +83,7 @@ export class GameClient {
 
 	async stop(): Promise<void> {
 		this.running = false;
-		// Log before closing DB since getLogContext() queries it
+
 		logClientEvent(this.getLogContext(), "Client stopping");
 		await this.mcp.disconnect();
 		this.db.close();
@@ -233,7 +233,6 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 					this.db.saveMessage(Date.now(), "client", { response: result.content });
 					this.messages.push({ role: "assistant", content: result.content });
 				} else {
-					// Empty response with no tool calls - LLM is stuck
 					logClientEvent(this.getLogContext(), "LLM returned empty response, nudging");
 					this.messages.push({
 						role: "user",
@@ -241,7 +240,7 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 							"You didn't take any action. Use your available tools to interact with the game. " +
 							"Try get_status() to see your current state, or get_notifications() to check for messages.",
 					});
-					// Don't break - continue the loop to give LLM another chance with the nudge
+
 					continue;
 				}
 				break;
@@ -258,20 +257,17 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 	private async executeToolCall(toolCall: ToolCall): Promise<void> {
 		const { name, arguments: rawArgs } = toolCall.function;
 
-		// Ollama sometimes returns arguments as a JSON string instead of parsed object
 		let args: Record<string, unknown>;
 		if (typeof rawArgs === "string") {
 			try {
 				args = JSON.parse(rawArgs);
 			} catch (error) {
-				// Malformed JSON from LLM - log error and inform LLM via tool result
 				const errorMsg = `Failed to parse tool arguments: ${error instanceof Error ? error.message : "Invalid JSON"}`;
 				logClientError(this.getLogContext(), `Tool ${name} argument parse error`, {
 					rawArgs,
 					error: errorMsg,
 				});
 
-				// Push error as tool result so LLM gets feedback
 				this.messages.push({
 					role: "tool",
 					name,
@@ -292,10 +288,8 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 
 		const result = await this.mcp.callTool(name, args);
 
-		// Summarize tool result to reduce token count in LLM context
 		const summarized = summarizeToolResult(name, result.content, result.success);
 
-		// Log with comparison: show both raw server data and what LLM sees
 		logToolResult(this.getLogContext(), name, {
 			...result,
 			summarized,
@@ -418,7 +412,6 @@ Respond with ONLY the character prompt, no explanations.`,
 						],
 					});
 				} else if (data.tool && data.content !== undefined) {
-					// Summarize historical tool results to reduce context size
 					const summarized = summarizeToolResult(data.tool, data.content, data.success !== false);
 					this.messages.push({
 						role: "tool",

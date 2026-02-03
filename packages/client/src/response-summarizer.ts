@@ -1,49 +1,28 @@
-/**
- * Response summarizer for tool results.
- *
- * Reduces token count in LLM context by extracting only essential information
- * from verbose tool responses. This helps prevent "lost in the middle" problems
- * and allows more effective use of the context window.
- */
-
 type SummarizerFn = (content: unknown) => unknown;
 
-/**
- * Summarize a tool result for inclusion in LLM context.
- * Errors are always preserved in full for learning value.
- */
 export function summarizeToolResult(toolName: string, content: unknown, success: boolean): unknown {
-	// Always preserve error messages in full
 	if (!success) {
 		return content;
 	}
 
-	// Apply tool-specific summarizer if available
 	const summarizer = TOOL_SUMMARIZERS[toolName];
 	if (summarizer) {
 		try {
 			return summarizer(content);
 		} catch {
-			// If summarization fails, return original
 			return content;
 		}
 	}
 
-	// Default: apply generic summarization
 	return summarizeGeneric(content);
 }
 
-/**
- * Generic summarizer for unknown tool responses.
- * Removes common verbose fields and truncates arrays.
- */
 function summarizeGeneric(content: unknown): unknown {
 	if (!content || typeof content !== "object") {
 		return content;
 	}
 
 	if (Array.isArray(content)) {
-		// Truncate arrays to first 5 items with simplified entries
 		return content.slice(0, 5).map((item) => summarizeGeneric(item));
 	}
 
@@ -51,12 +30,10 @@ function summarizeGeneric(content: unknown): unknown {
 	const result: Record<string, unknown> = {};
 
 	for (const [key, value] of Object.entries(obj)) {
-		// Skip verbose/redundant fields
 		if (SKIP_FIELDS.has(key)) {
 			continue;
 		}
 
-		// Recursively summarize nested objects
 		if (value && typeof value === "object") {
 			result[key] = summarizeGeneric(value);
 		} else {
@@ -67,12 +44,7 @@ function summarizeGeneric(content: unknown): unknown {
 	return result;
 }
 
-/**
- * Fields to skip in generic summarization.
- * These are typically verbose, redundant, or not useful for decision-making.
- */
 const SKIP_FIELDS = new Set([
-	// Timestamps (rarely needed for decisions)
 	"created_at",
 	"last_login_at",
 	"last_active_at",
@@ -80,30 +52,25 @@ const SKIP_FIELDS = new Set([
 	"last_seen",
 	"timestamp",
 	"discovered_at",
-	// Colors (cosmetic)
+
 	"primary_color",
 	"secondary_color",
-	// Empty or default values
+
 	"status_message",
 	"clan_tag",
 	"description",
-	// Detailed stats (rarely needed in-flight)
+
 	"stats",
 	"skill_xp",
 	"skills",
 	"experience",
-	// Full discovery data (too verbose)
+
 	"discovered_systems",
-	// Position data (usually not needed)
+
 	"position",
 ]);
 
-/**
- * Tool-specific summarizers.
- * Each function extracts only the fields essential for LLM decision-making.
- */
 const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
-	// Status tools - extract key decision-making info
 	get_status: (content) => {
 		const c = content as Record<string, unknown>;
 		const player = c.player as Record<string, unknown> | undefined;
@@ -136,7 +103,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Registration - extract essentials, password already logged separately
 	register: (content) => {
 		const c = content as Record<string, unknown>;
 		const player = c.player as Record<string, unknown> | undefined;
@@ -187,7 +153,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Login - similar to register
 	login: (content) => {
 		const c = content as Record<string, unknown>;
 		const player = c.player as Record<string, unknown> | undefined;
@@ -216,7 +181,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Nearby players - just username and key identifiers
 	get_nearby: (content) => {
 		const c = content as Record<string, unknown>;
 		const nearby = c.nearby as Array<Record<string, unknown>> | undefined;
@@ -234,7 +198,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Notifications - keep type and essential content
 	get_notifications: (content) => {
 		const c = content as Record<string, unknown>;
 		const notifications = c.notifications as Array<Record<string, unknown>> | undefined;
@@ -252,7 +215,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Navigation actions - keep just the outcome
 	travel: (content) => {
 		const c = content as Record<string, unknown>;
 		return {
@@ -291,7 +253,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Combat actions
 	attack: (content) => {
 		const c = content as Record<string, unknown>;
 		return {
@@ -313,7 +274,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// System info - key navigation data only
 	get_system: (content) => {
 		const c = content as Record<string, unknown>;
 		return {
@@ -337,7 +297,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Faction info - essential data
 	faction_info: (content) => {
 		const c = content as Record<string, unknown>;
 		const members = c.members as Array<Record<string, unknown>> | undefined;
@@ -368,7 +327,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Chat - already compact, just ensure structure
 	chat: (content) => {
 		const c = content as Record<string, unknown>;
 		const notification = c.notification as Record<string, unknown> | undefined;
@@ -382,7 +340,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Forum
 	forum_list: (content) => {
 		const c = content as Record<string, unknown>;
 		const threads = c.threads as Array<Record<string, unknown>> | undefined;
@@ -436,7 +393,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Market
 	get_market: (content) => {
 		const c = content as Record<string, unknown>;
 		const listings = c.listings as Array<Record<string, unknown>> | undefined;
@@ -456,7 +412,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Ship management
 	get_ship: (content) => {
 		const c = content as Record<string, unknown>;
 		const modules = c.modules as Array<Record<string, unknown>> | undefined;
@@ -491,7 +446,6 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Captain's log
 	captains_log_add: (content) => {
 		const c = content as Record<string, unknown>;
 		return {
@@ -508,6 +462,5 @@ const TOOL_SUMMARIZERS: Record<string, SummarizerFn> = {
 		};
 	},
 
-	// Help - keep full content (it's instructional)
 	help: (content) => content,
 };

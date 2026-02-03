@@ -1,143 +1,72 @@
-# Agent Guidelines
+# SpaceMolt LLM Player Agent Guidelines
 
-## Project Overview
+Guidelines for AI agents working on this codebase.
 
-This is an autonomous AI agent client for SpaceMolt, an MMO for AI agents. The client uses MCP (Model Context Protocol) to communicate with the game server and Ollama for local LLM inference with tool calling.
+## Rules
 
-## Architecture
+**CRITICAL: Always follow these rules.**
 
-### Core Components
+**YOU MUST**:
 
-- **MCP Client** (`mcp-client.ts`): Connects to SpaceMolt's MCP server, discovers tools, executes tool calls
-- **Ollama Client** (`ollama.ts`): Wraps Ollama's `/api/chat` endpoint with tool support
-- **Game Client** (`game-client.ts`): Orchestrates the agent loop between MCP and Ollama
-- **Database** (`db.ts`): SQLite persistence for accounts and message history
+- Never add comments to code (single-line, multi-line, or JSDoc)
+- Run `bun run check` before completing any task
+- Use Bun APIs and TypeScript strict mode
+- Keep functions small and focused
+- Use explicit return types on exported functions
 
-### Agent Loop
+## Terminology
 
-```
-1. LLM receives messages + available tools
-2. LLM responds with tool_calls (or content)
-3. Execute each tool call via MCP
-4. Append results to messages
-5. Repeat until LLM responds without tool calls (max 10 iterations)
-6. Wait 1 second, start next round
-```
+- **MCP**: Model Context Protocol - how the client communicates with the SpaceMolt game server
+- **Ollama**: Local LLM server that provides tool-calling capabilities
+- **Instance**: A unique client session with its own SQLite database (4-char ID)
+- **Archetype**: Character personality presets (diplomat, opportunist, agitator)
+- **Tool**: An MCP action the LLM can call (register, login, travel, attack, etc.)
 
-### Message Persistence
+## Workflow
 
-All interactions are saved to SQLite:
+1. **Understand**: Read relevant source files before making changes
+2. **Implement**: Make minimal, focused changes
+3. **Verify**: Run `bun run check` (formats, lints, tests)
+4. **Test**: If adding features, add corresponding tests
 
-- Tool calls saved as `{ tool, arguments }` (sender: client)
-- Tool results saved as `{ tool, success, content }` (sender: server)
-- Final LLM responses saved as `{ response }` (sender: client)
+## Role
 
-On restart, message history is restored to provide context continuity.
+You are helping develop an autonomous AI game client. The client:
 
-## Code Conventions
+- Connects to SpaceMolt's MCP server at `https://game.spacemolt.com/mcp`
+- Uses Ollama for local LLM inference with tool calling
+- Gives the LLM full agency to play the game autonomously
+- Persists state in SQLite databases per instance
 
-### TypeScript
-
-- Use strict TypeScript with `noEmit` for type checking
-- Prefer interfaces over types for object shapes
-- Use explicit return types on public methods
-
-### Error Handling
-
-- Log errors with `logClientError()`, include context
-- Don't swallow errors silently
-- MCP tool failures should be passed to LLM (it learns from errors)
-
-### Testing
-
-- Tests use Bun's built-in test runner
-- Mock external services (Ollama, MCP) in tests
-- Run `bun run check` before committing
-
-### Formatting
-
-- Prettier handles formatting
-- Run `bun run check:format` to format all files
-
-## File Organization
+## Project Structure
 
 ```
-packages/client/src/
-├── mcp-client.ts      # MCP connection and tool execution
-├── ollama.ts          # Ollama chat API
-├── game-client.ts     # Main orchestration
-├── db.ts              # SQLite persistence
-├── types.ts           # TypeScript types
-├── logging.ts         # Structured logging
-├── archetypes.ts      # Character personalities
-├── model-config.ts    # Model configuration loader
-├── cli.ts             # CLI argument parser
-└── index.ts           # Entry point
+packages/
+├── client/     # Main game client (@spacemolt/client)
+│   ├── src/
+│   │   ├── index.ts        # Entry point
+│   │   ├── cli.ts          # CLI argument parsing
+│   │   ├── game-client.ts  # Agent loop orchestration
+│   │   ├── mcp-client.ts   # MCP connection and tools
+│   │   ├── ollama.ts       # Ollama chat API
+│   │   ├── db.ts           # SQLite persistence
+│   │   ├── archetypes.ts   # Character personalities
+│   │   └── types.ts        # TypeScript types
+│   └── tests/
+├── cui/        # Console UI logging (@spacemolt/cui)
+└── tui/        # Terminal UI with Ink (@spacemolt/tui)
 ```
 
-## Adding New Features
+## Key Files
 
-### New Tool Handling
+- `player-models.json` - LLM model configurations (root)
+- `packages/client/src/tool-schemas.ts` - MCP tool parameter schemas
+- `packages/client/src/response-summarizer.ts` - Reduces tool result tokens
 
-Tools come dynamically from MCP. To add special handling for a tool result:
-
-```typescript
-// In game-client.ts executeToolCall()
-if (name === "your_tool" && result.success) {
-	await this.handleYourToolSuccess(args, result.content);
-}
-```
-
-### New Model Support
-
-Add to `player-models.json`:
-
-```json
-{
-	"your-model": {
-		"displayName": "Your Model",
-		"ollama": {
-			"model": "actual-ollama-model-name",
-			"options": { "temperature": 0.7 }
-		},
-		"recommendedMessages": 50
-	}
-}
-```
-
-Model must support Ollama's tool calling format.
-
-## Common Tasks
-
-### Running the Client
+## Commands
 
 ```bash
-cd packages/client
-bun start -- -i test1 -v
+bun run check          # Format, lint, test (from root)
+bun run cli            # Run the client
+cd packages/client && bun start  # Run client directly
 ```
-
-### Running Tests
-
-```bash
-bun run check        # All checks
-bun test             # Tests only
-bun test --watch     # Watch mode
-```
-
-### Debugging
-
-Enable verbose mode with `-v` flag to see:
-
-- Tool calls and arguments
-- Tool results
-- LLM thinking (if model supports it)
-
-## Key Design Decisions
-
-1. **LLM has full agency**: The client doesn't make decisions - the LLM decides everything including when to poll notifications, how to handle rate limits, what to do next.
-
-2. **MCP over WebSocket**: Uses HTTP-based MCP transport instead of WebSocket for simpler connection handling.
-
-3. **In-memory + SQLite**: Messages kept in memory for fast access, persisted to SQLite for restart recovery.
-
-4. **Single agent loop**: One round at a time, max 10 tool iterations per round, 1 second delay between rounds.

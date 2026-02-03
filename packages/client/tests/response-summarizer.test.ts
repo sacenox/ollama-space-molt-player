@@ -78,20 +78,17 @@ describe("Response Summarizer", () => {
 				ship: Record<string, unknown>;
 			};
 
-			// Should have essential player fields
 			expect(result.player.username).toBe("TestPlayer");
 			expect(result.player.credits).toBe(1000);
 			expect(result.player.current_system).toBe("sol");
 			expect(result.player.current_poi).toBe("sol_station");
 			expect(result.player.docked_at_base).toBe("sol_base");
 
-			// Should NOT have verbose fields
 			expect(result.player.created_at).toBeUndefined();
 			expect(result.player.stats).toBeUndefined();
 			expect(result.player.discovered_systems).toBeUndefined();
 			expect(result.player.primary_color).toBeUndefined();
 
-			// Should have essential ship fields
 			expect(result.ship.name).toBe("Prospector");
 			expect(result.ship.hull).toBe(100);
 			expect(result.ship.max_hull).toBe(100);
@@ -101,7 +98,6 @@ describe("Response Summarizer", () => {
 			expect(result.ship.cargo_capacity).toBe(50);
 			expect(result.ship.modules).toEqual(["mod1", "mod2"]);
 
-			// Should NOT have verbose ship fields
 			expect(result.ship.created_at).toBeUndefined();
 		});
 	});
@@ -127,19 +123,15 @@ describe("Response Summarizer", () => {
 				nearby: Array<Record<string, unknown>>;
 			};
 
-			// Should preserve count
 			expect(result.count).toBe(20);
 
-			// Should limit to 10 players
 			expect(result.nearby.length).toBe(10);
 
-			// Should have key fields
 			expect(result.nearby[0].username).toBe("User0");
 			expect(result.nearby[0].player_id).toBe("player0");
 			expect(result.nearby[0].ship_class).toBe("starter_mining");
 			expect(result.nearby[0].in_combat).toBe(true);
 
-			// Should NOT have verbose fields
 			expect(result.nearby[0].primary_color).toBeUndefined();
 			expect(result.nearby[0].secondary_color).toBeUndefined();
 			expect(result.nearby[0].status_message).toBeUndefined();
@@ -153,12 +145,8 @@ describe("Response Summarizer", () => {
 				ticks: 3,
 				destination: "sol_belt",
 				message: "Traveling to Asteroid Belt",
-				player: {
-					/* full player object */
-				},
-				ship: {
-					/* full ship object */
-				},
+				player: {},
+				ship: {},
 			};
 
 			const result = summarizeToolResult("travel", fullResponse, true) as Record<string, unknown>;
@@ -168,7 +156,6 @@ describe("Response Summarizer", () => {
 			expect(result.destination).toBe("sol_belt");
 			expect(result.message).toBe("Traveling to Asteroid Belt");
 
-			// Should NOT have embedded state objects
 			expect(result.player).toBeUndefined();
 			expect(result.ship).toBeUndefined();
 		});
@@ -224,7 +211,6 @@ describe("Response Summarizer", () => {
 					current_system: "sol",
 					current_poi: "sol_station",
 					docked_at_base: "sol_base",
-					// ... many more fields
 				},
 				ship: {
 					id: "ship123",
@@ -234,7 +220,6 @@ describe("Response Summarizer", () => {
 					max_hull: 100,
 					fuel: 100,
 					max_fuel: 100,
-					// ... many more fields
 				},
 				system: {
 					id: "sol",
@@ -255,23 +240,19 @@ describe("Response Summarizer", () => {
 
 			const result = summarizeToolResult("register", fullResponse, true) as Record<string, unknown>;
 
-			// Should preserve critical fields
 			expect(result.message).toBe("Registration successful!");
 			expect(result.player_id).toBe("abc123");
 			expect(result.token).toBe("secret_token_123");
 
-			// Should have simplified player
 			const player = result.player as Record<string, unknown>;
 			expect(player.username).toBe("NewPlayer");
 			expect(player.empire).toBe("solarian");
 			expect(player.current_system).toBe("sol");
 
-			// Should have simplified ship
 			const ship = result.ship as Record<string, unknown>;
 			expect(ship.name).toBe("Prospector");
 			expect(ship.hull).toBe(100);
 
-			// Should have simplified system (no description)
 			const system = result.system as Record<string, unknown>;
 			expect(system.id).toBe("sol");
 			expect(system.name).toBe("Sol");

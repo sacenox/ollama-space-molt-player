@@ -1,8 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Main entry point for manual tests
- * Allows selecting which test suite to run
- */
 
 import { spawn } from "child_process";
 import path from "path";
@@ -25,7 +21,6 @@ if (!suites[suite as keyof typeof suites]) {
 
 const suitePath = path.join(__dirname, suites[suite as keyof typeof suites]);
 
-// Run the selected suite
 const child = spawn("bun", [suitePath], {
 	stdio: "inherit",
 });

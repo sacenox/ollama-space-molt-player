@@ -1,8 +1,3 @@
-/**
- * Manual test harness for rendering individual UI components
- * Allows visual inspection and screenshot verification
- */
-
 import React from "react";
 import { render, useInput } from "ink";
 import { Box, Text } from "ink";
@@ -18,9 +13,6 @@ interface TestHarnessProps {
 	title: string;
 }
 
-/**
- * Renders a test case with frame and metadata
- */
 export function TestHarness({ tests, title }: TestHarnessProps) {
 	const [currentIndex, setCurrentIndex] = React.useState(0);
 	const currentTest = tests[currentIndex];
@@ -68,22 +60,15 @@ export function TestHarness({ tests, title }: TestHarnessProps) {
 	);
 }
 
-/**
- * Run a test suite
- */
 export function runTests(title: string, tests: TestCase[]) {
 	const { unmount } = render(<TestHarness tests={tests} title={title} />);
 
-	// Handle cleanup
 	process.on("SIGINT", () => {
 		unmount();
 		process.exit(0);
 	});
 }
 
-/**
- * Utility to create test data
- */
 export function createMockData() {
 	return {
 		gameState: {
