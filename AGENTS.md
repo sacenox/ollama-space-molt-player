@@ -1,209 +1,143 @@
-# Agent Guide for ollama-spacemolt-player
+# Agent Guidelines
 
-Help coding agents work safely and consistently in this repo.
+## Project Overview
 
-## Important References
+This is an autonomous AI agent client for SpaceMolt, an MMO for AI agents. The client uses MCP (Model Context Protocol) to communicate with the game server and Ollama for local LLM inference with tool calling.
 
-**Design Document**: `docs/2026-02-03-client-refactor-design.md` - Primary source of truth for architecture and design decisions
+## Architecture
 
-**Game Server WebSocket API**: https://www.spacemolt.com/api.md
+### Core Components
 
-## Workspace Structure
+- **MCP Client** (`mcp-client.ts`): Connects to SpaceMolt's MCP server, discovers tools, executes tool calls
+- **Ollama Client** (`ollama.ts`): Wraps Ollama's `/api/chat` endpoint with tool support
+- **Game Client** (`game-client.ts`): Orchestrates the agent loop between MCP and Ollama
+- **Database** (`db.ts`): SQLite persistence for accounts and message history
 
-This is a Bun workspace with the following layout:
+### Agent Loop
 
 ```
-ollama-spacemolt-workspace/
-├── packages/
-│   └── client/          # WebSocket client package
-│       ├── src/         # Source code
-│       ├── tests/       # Unit tests
-│       └── package.json
-├── scripts/
-│   └── strip-comments.ts  # Comment removal script
-├── docs/
-│   └── 2026-02-03-client-refactor-design.md  # Sacred design document
-├── package.json         # Workspace root
-├── tsconfig.json        # Base TypeScript config
-└── .prettierrc.json    # Prettier configuration
+1. LLM receives messages + available tools
+2. LLM responds with tool_calls (or content)
+3. Execute each tool call via MCP
+4. Append results to messages
+5. Repeat until LLM responds without tool calls (max 10 iterations)
+6. Wait 1 second, start next round
 ```
 
-## Design Principles
+### Message Persistence
 
-From `docs/2026-02-03-client-refactor-design.md`:
+All interactions are saved to SQLite:
 
-1. **Reduce abstraction** - Minimize layers between client and server
-2. **Direct connection** - Connect to WebSocket without intermediate libraries
-3. **Neutral errors** - Use language from api.md, avoid behavioral bias
-4. **Single bias point** - Only `prompt` field influences LLM behavior
-5. **Minimal translation** - Forward game events directly to LLM
+- Tool calls saved as `{ tool, arguments }` (sender: client)
+- Tool results saved as `{ tool, success, content }` (sender: server)
+- Final LLM responses saved as `{ response }` (sender: client)
 
-## Commands
+On restart, message history is restored to provide context continuity.
 
-### Workspace Level
-
-```bash
-# Install dependencies
-bun install
-
-# Run all checks (format, lint, test)
-bun run check
-
-# Individual checks
-bun run strip-comments   # Strip comments from TypeScript files
-bun run check:format     # Format with Prettier
-bun run check:lint       # TypeScript compilation check
-bun run check:test       # Run tests
-```
-
-### Client Package
-
-```bash
-cd packages/client
-
-# Run checks
-bun run check
-
-# Start client (once implemented)
-bun run start
-```
-
-## Code Style Guidelines
-
-### Formatting
-
-- Use Prettier for all formatting
-- TypeScript compilation (`tsc --noEmit`) for linting
-- Tabs for indentation (2-space width)
-- 100 character line width
-- Semicolons, double quotes, trailing commas
-
-### Naming Conventions
-
-- Types/interfaces: `PascalCase`
-- Functions and variables: `camelCase`
-- Constants: `SCREAMING_SNAKE_CASE`
-- File names: `kebab-case.ts`
+## Code Conventions
 
 ### TypeScript
 
-- `strict` mode enabled
-- Avoid `any`, use `unknown` then narrow
-- Explicit return types for public functions
-- Prefer `null` over `undefined` for absent values
+- Use strict TypeScript with `noEmit` for type checking
+- Prefer interfaces over types for object shapes
+- Use explicit return types on public methods
+
+### Error Handling
+
+- Log errors with `logClientError()`, include context
+- Don't swallow errors silently
+- MCP tool failures should be passed to LLM (it learns from errors)
 
 ### Testing
 
-- Use Bun's built-in test runner (`bun test`)
-- Target: 80% coverage for client code
-- Unit tests for core logic
-- Manual tests for TUI (screenshots)
+- Tests use Bun's built-in test runner
+- Mock external services (Ollama, MCP) in tests
+- Run `bun run check` before committing
 
-## Database
+### Formatting
 
-SQLite via `bun:sqlite`:
+- Prettier handles formatting
+- Run `bun run check:format` to format all files
 
-- Pattern: `memory-{instance-id}.sqlite`
-- Two tables: `account_details`, `messages`
-- Maximum 5000 messages, sorted by tick
-- Unique instance ID per client (4 characters)
+## File Organization
 
-## Tick Processing
-
-The client uses a server-driven tick system with critical safety mechanisms:
-
-**Processing Lock:**
-
-- Only one tick can process at a time (enforced by `isProcessingTick` flag)
-- If a new tick arrives while previous tick is still processing, it is skipped
-- Prevents parallel LLM calls that would violate game server rate limits
-- Skipped ticks are logged but not saved to database
-
-**Flow:**
-
-1. Server sends tick message every ~10 seconds
-2. Client checks if currently processing (`isProcessingTick`)
-3. If processing: log skip and return
-4. If not: set lock, process tick (LLM call + command send), release lock
-
-**Why this matters:**
-
-- LLM calls can take 8-12 seconds (variable)
-- Tick interval is 10 seconds (fixed)
-- Without lock: overlapping ticks cause rate limiting errors
-- With lock: sequential processing matches game server expectations
-
-## Error Handling
-
-- Neutral, factual language only
-- Follow error terminology from api.md
-- No behavioral bias in error messages
-- Client errors logged but don't stop tick loop
-
-## Development Workflow
-
-1. Read `docs/2026-02-03-client-refactor-design.md` for context
-2. Make changes aligned with design principles
-3. Run `bun run check` before committing (strips comments, formats, lints, tests)
-4. Keep abstractions minimal
-5. Test with real game server when possible
-
-## Code Quality
-
-### No Comments Policy
-
-**Comments are automatically stripped from all TypeScript files during the check process.** This prevents outdated comments from misleading future agents as code evolves.
-
-**Why this matters for AI agents:**
-
-- Agents make edits in chunks and often miss contextual comments
-- Outdated comments create false assumptions about code behavior
-- Comments can contradict actual implementation after refactoring
-- Self-documenting code is more reliable than potentially stale documentation
-
-**When comments are stripped:**
-
-- During `bun run check` (after formatting, before linting)
-- Applies to all `.ts` files in `packages/*/src/**` and `packages/*/tests/**`
-- ALL comments are removed: single-line (`//`), multi-line (`/* */`), JSDoc
-
-**Write self-documenting code instead:**
-
-- Clear variable and function names that explain intent
-- Small, focused functions (easier to understand at a glance)
-- Type annotations for function signatures
-- Well-structured code organization
-- Descriptive constant names instead of magic numbers
-
-**Example - Instead of:**
-
-```typescript
-const d = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+```
+packages/client/src/
+├── mcp-client.ts      # MCP connection and tool execution
+├── ollama.ts          # Ollama chat API
+├── game-client.ts     # Main orchestration
+├── db.ts              # SQLite persistence
+├── types.ts           # TypeScript types
+├── logging.ts         # Structured logging
+├── archetypes.ts      # Character personalities
+├── model-config.ts    # Model configuration loader
+├── cli.ts             # CLI argument parser
+└── index.ts           # Entry point
 ```
 
-**Write:**
+## Adding New Features
+
+### New Tool Handling
+
+Tools come dynamically from MCP. To add special handling for a tool result:
 
 ```typescript
-function calculateDistance(point1: Point, point2: Point): number {
-	const deltaX = point2.x - point1.x;
-	const deltaY = point2.y - point1.y;
-	return Math.sqrt(deltaX ** 2 + deltaY ** 2);
+// In game-client.ts executeToolCall()
+if (name === "your_tool" && result.success) {
+	await this.handleYourToolSuccess(args, result.content);
 }
 ```
 
-**Where to document:**
+### New Model Support
 
-- Design decisions → `docs/2026-02-03-client-refactor-design.md`
-- Architecture patterns → `AGENTS.md` (this file)
-- User instructions → `README.md`
-- API reference → Markdown files or separate docs
+Add to `player-models.json`:
 
-## What NOT to Do
+```json
+{
+	"your-model": {
+		"displayName": "Your Model",
+		"ollama": {
+			"model": "actual-ollama-model-name",
+			"options": { "temperature": 0.7 }
+		},
+		"recommendedMessages": 50
+	}
+}
+```
 
-- Do not add intermediate translation layers
-- Do not add behavioral bias outside `prompt` field
-- Do not modify sacred `docs/2026-02-03-client-refactor-design.md`
-- Do not commit `*.sqlite` or `*.log` files
-- Do not create backward compatibility with old implementation
-- **Do not access files outside of the repo root** - All file operations must stay within `/home/xonecas/src/ollama-spacemolt-player`
-- **Run all commands in the repo root** - Use the `workdir` parameter if needed, but default to repo root
+Model must support Ollama's tool calling format.
+
+## Common Tasks
+
+### Running the Client
+
+```bash
+cd packages/client
+bun start -- -i test1 -v
+```
+
+### Running Tests
+
+```bash
+bun run check        # All checks
+bun test             # Tests only
+bun test --watch     # Watch mode
+```
+
+### Debugging
+
+Enable verbose mode with `-v` flag to see:
+
+- Tool calls and arguments
+- Tool results
+- LLM thinking (if model supports it)
+
+## Key Design Decisions
+
+1. **LLM has full agency**: The client doesn't make decisions - the LLM decides everything including when to poll notifications, how to handle rate limits, what to do next.
+
+2. **MCP over WebSocket**: Uses HTTP-based MCP transport instead of WebSocket for simpler connection handling.
+
+3. **In-memory + SQLite**: Messages kept in memory for fast access, persisted to SQLite for restart recovery.
+
+4. **Single agent loop**: One round at a time, max 10 tool iterations per round, 1 second delay between rounds.

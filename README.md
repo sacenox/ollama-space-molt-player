@@ -1,132 +1,128 @@
-# ollama-spacemolt-workspace
+# ollama-spacemolt-player
 
-Bun workspace for LLM-controlled SpaceMolt game client.
+Autonomous AI agent that plays [SpaceMolt](https://spacemolt.com) using local LLMs via Ollama.
 
-## Project Structure
+## Overview
 
-This is a monorepo using Bun workspaces:
+This client connects to SpaceMolt's MCP (Model Context Protocol) server and uses Ollama's native tool calling to let an LLM play the game autonomously. The LLM has full agency - it decides when to mine, trade, fight, chat with other players, and explore the galaxy.
 
-- `packages/client/` - WebSocket client that connects LLM to game server
-- `docs/2026-02-03-client-refactor-design.md` - Architecture and design decisions
-- `AGENTS.md` - Guide for coding agents working in this repo
+## Architecture
 
-## Design Philosophy
+```
+┌──────────────────────────────────────────────────────────┐
+│                    GameClient                             │
+│                                                           │
+│   ┌─────────────┐         ┌─────────────────────┐        │
+│   │ MCP Client  │◄───────►│ SpaceMolt MCP       │        │
+│   │ (94 tools)  │         │ game.spacemolt.com  │        │
+│   └──────┬──────┘         └─────────────────────┘        │
+│          │                                                │
+│          ▼                                                │
+│   ┌─────────────┐         ┌─────────────────────┐        │
+│   │ Ollama Chat │◄───────►│ Ollama Server       │        │
+│   │ (tool calls)│         │ (local LLM)         │        │
+│   └─────────────┘         └─────────────────────┘        │
+│                                                           │
+│   Agent Loop: LLM → tool_calls → MCP execute → repeat    │
+└──────────────────────────────────────────────────────────┘
+```
 
-See `docs/2026-02-03-client-refactor-design.md` for full details. Key principles:
+### How It Works
 
-- Direct WebSocket connection to game server
-- Minimal abstraction layers
-- Neutral error messaging
-- Single behavioral bias point (LLM prompt field)
+1. **MCP Connection**: Client connects to `https://game.spacemolt.com/mcp` and discovers 94 game tools
+2. **Tool Conversion**: MCP tools are converted to Ollama's tool format
+3. **Agent Loop**: LLM receives game context, makes tool calls, results fed back, repeat
+4. **Persistence**: All tool calls and results saved to SQLite for context restoration on restart
 
 ## Quick Start
 
+### Prerequisites
+
+- [Bun](https://bun.sh) v1.0+
+- [Ollama](https://ollama.ai) running locally
+
 ```bash
-# Install dependencies
+# Install recommended model
+ollama pull qwen3:8b
+
+# Clone and install
+git clone https://github.com/sacenox/ollama-space-molt-player.git
+cd ollama-space-molt-player
 bun install
 
-# Configure Ollama server (REQUIRED)
-export OLLAMA_CONTEXT_LENGTH=16384
-
-# Start Ollama server
-ollama serve
-
-# In another terminal, pull the default model
-ollama pull lfm2.5-thinking
-
-# Run all checks (format, lint, test)
-bun run check
-
-# Work in client package
+# Start playing
 cd packages/client
-bun run start
+bun start
 ```
 
-ollama logs: journalctl -u ollama -f -n 100
-
-**Important:** Set `OLLAMA_CONTEXT_LENGTH=16384` before starting the Ollama server. The default limit (4096) truncates prompts and causes the bot to forget recent game history.
-
-Model configurations are defined in `player-models.json` at the repo root.
-
-## Code Quality
-
-### No Comments Policy
-
-This project automatically strips all code comments during the check process. This may seem unusual, but it serves an important purpose:
-
-**Why no comments?**
-
-- AI agents make incremental edits and often miss updating related comments
-- Outdated comments mislead future developers and agents more than missing comments
-- Forces code to be self-documenting through clear naming and structure
-
-**When are comments stripped?**
-
-- Automatically during `bun run check`
-- After formatting and before linting/testing
-
-**How to write self-documenting code:**
-
-- Use descriptive variable and function names
-- Keep functions small and focused
-- Use type annotations to document interfaces
-- Structure code logically with clear separation of concerns
-- Extract complex logic into named functions
-
-**What about documentation?**
-
-- User-facing documentation belongs in markdown files (README.md, design docs)
-- API documentation can use JSDoc in declaration files if needed
-- Design decisions should be captured in `docs/2026-02-03-client-refactor-design.md`
-
-## Workspace Commands
-
-- `bun run check` - Run format, lint, and tests
-- `bun run check:format` - Format code with Prettier
-- `bun run check:lint` - Type-check with TypeScript
-- `bun run check:test` - Run tests with Bun
-
-## Troubleshooting
-
-### Ollama truncation warnings
-
-If you see `truncating input prompt` warnings in Ollama server logs:
-
-**Symptom:** Bot forgets recent game events and repeats failed actions
-
-**Cause:** Ollama's default context limit (4096 tokens) is too small for game state history
-
-**Solution:**
-
-1. Stop Ollama server
-2. Set environment variable: `export OLLAMA_CONTEXT_LENGTH=16384`
-3. Restart: `ollama serve`
-
-**For systemd service:**
+### CLI Options
 
 ```bash
-sudo systemctl edit ollama
+bun start [OPTIONS]
+
+Options:
+  -i, --instance <id>       Instance ID (4 chars, auto-generated if not provided)
+  -m, --model <name>        Model config name (default: qwen3-8b)
+  -a, --archetype <name>    Character archetype: diplomat, opportunist, agitator
+  --hint <text>             Guidance injected into LLM context
+  --ollama-timeout <ms>     Ollama API timeout (default: 30000)
+  -s, --server <url>        MCP server URL (default: https://game.spacemolt.com/mcp)
+  -cw, --context-window <n> Max messages in context (default: 50)
+  -v, --verbose             Verbose logging
 ```
 
-Add to the override file:
-
-```ini
-[Service]
-Environment="OLLAMA_CONTEXT_LENGTH=16384"
-```
-
-Then restart the service:
+### Examples
 
 ```bash
-sudo systemctl restart ollama
+# New character with diplomat personality
+bun start -- -i abc1 -a diplomat
+
+# Resume existing instance with hint
+bun start -- -i abc1 --hint "Focus on mining titanium"
+
+# Use different model
+bun start -- -m llama3.1-8b
 ```
 
-## References
+## Project Structure
 
-- Game Server API: https://www.spacemolt.com/api.md
-- Design Document: `docs/2026-02-03-client-refactor-design.md`
-- Agent Guide: `AGENTS.md`
+```
+packages/client/
+├── src/
+│   ├── mcp-client.ts     # MCP SDK connection, tool discovery, execution
+│   ├── ollama.ts         # Ollama chat API with tool calling
+│   ├── game-client.ts    # Agent loop orchestration
+│   ├── db.ts             # SQLite persistence
+│   ├── archetypes.ts     # Character personalities
+│   ├── logging.ts        # Structured logging
+│   └── cli.ts            # CLI argument parser
+└── tests/
+```
+
+## Models
+
+Configured in `player-models.json`:
+
+| Config Name  | Model        | Tool Support | Notes                |
+| ------------ | ------------ | ------------ | -------------------- |
+| qwen3-8b     | qwen3:8b     | Yes          | Default, recommended |
+| qwen3-4b     | qwen3:4b     | Yes          | Lighter weight       |
+| llama3.1-8b  | llama3.1:8b  | Yes          | Good alternative     |
+| mistral-nemo | mistral-nemo | Yes          | Larger context       |
 
 ## Development
 
-See `packages/client/README.md` for client-specific documentation.
+```bash
+# Run all checks
+bun run check
+
+# Run tests
+bun test
+
+# Format code
+bun run check:format
+```
+
+## License
+
+MIT
