@@ -1,6 +1,7 @@
 import { parseArgs, printHelp, printInstances } from "./cli.ts";
 import { GameDatabase, generateInstanceId, instanceExists } from "./db.ts";
 import { GameClient } from "./game-client.ts";
+import { loadModelConfig } from "./model-config.ts";
 
 async function main() {
 	try {
@@ -69,6 +70,11 @@ async function main() {
 				console.log(`Using existing instance: ${parsed.config.instanceId}`);
 			} else {
 				console.log(`Creating new instance: ${parsed.config.instanceId}`);
+			}
+
+			if (parsed.config.contextWindowSize === undefined) {
+				const modelConfig = loadModelConfig(parsed.config.model);
+				parsed.config.contextWindowSize = modelConfig.recommendedMessages ?? 12;
 			}
 
 			const db = new GameDatabase(parsed.config.instanceId);

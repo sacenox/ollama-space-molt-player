@@ -40,6 +40,7 @@ describe("CLI Argument Parser", () => {
 		const result = parseArgs(["start"]);
 		expect(result.command).toBe("start");
 		expect(result.config?.model).toBe("lfm-thinking");
+		expect(result.config?.contextWindowSize).toBeUndefined();
 	});
 
 	test("should parse start with instance ID", () => {
@@ -95,6 +96,16 @@ describe("CLI Argument Parser", () => {
 		expect(result.config?.model).toBe("qwen2.5");
 		expect(result.config?.archetype).toBe("opportunist");
 		expect(result.config?.hint).toBe("explore");
+	});
+
+	test("should parse context window size when provided", () => {
+		const result = parseArgs(["start", "--context-window", "15"]);
+		expect(result.config?.contextWindowSize).toBe(15);
+	});
+
+	test("should parse context window size with short flag", () => {
+		const result = parseArgs(["start", "-cw", "25"]);
+		expect(result.config?.contextWindowSize).toBe(25);
 	});
 
 	test("should throw error for unknown command", () => {

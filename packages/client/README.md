@@ -130,7 +130,7 @@ bun run start help
 | `--archetype <name>`    | `-a`  | Character archetype (see below)                       | None                          |
 | `--ollama-timeout <ms>` |       | Ollama API timeout in milliseconds                    | `30000`                       |
 | `--server <url>`        | `-s`  | WebSocket server URL                                  | `wss://game.spacemolt.com/ws` |
-| `--context-window <n>`  | `-cw` | Number of recent messages to include in LLM context   | `20`                          |
+| `--context-window <n>`  | `-cw` | Number of recent messages to include in LLM context   | Model's recommendedMessages   |
 
 ### Archetypes
 
@@ -145,18 +145,21 @@ Character archetypes define gameplay personality:
 Models are configured in `player-models.json` at the repo root. Each configuration includes:
 
 - **Ollama model name**: The actual model to load (e.g., `lfm2.5-thinking`)
-- **Options**: Model-specific parameters (temperature, thinking mode, etc.)
+- **Options**: Model-specific parameters (temperature, etc.)
 - **Context window**: Token limit for this model
+- **Recommended messages**: Default history size for this model
 - **Metadata**: Display name, description, recommendation status
 
 **Available Models:**
 
-| Config Name  | Size  | Context | Features                            | Recommended |
-| ------------ | ----- | ------- | ----------------------------------- | ----------- |
-| lfm-thinking | 731MB | 4K      | Built-in thinking, fast             | ✓           |
-| qwen3        | 5.2GB | 32K     | Strong reasoning, explicit thinking |             |
-| qwen2.5      | 4.7GB | 32K     | Balanced performance                |             |
-| deepseek-r1  | ~5GB  | 128K    | Advanced reasoning, large context   |             |
+| Config Name  | Size  | Context | Messages | Thinking | Best For             |
+| ------------ | ----- | ------- | -------- | -------- | -------------------- |
+| lfm-thinking | 731MB | 128K    | 10       | ✅       | Fast, minimal VRAM   |
+| deepseek-r1  | 4.7GB | 131K    | 12       | ✅       | Advanced reasoning   |
+| qwen3        | 5.2GB | 40K     | 15       | ✅       | Tools + thinking     |
+| ministral-3  | 6.0GB | 262K    | 20       | ❌       | Maximum game history |
+
+**Messages** column shows the recommended context window size (number of game state messages) for each model.
 
 **Adding Custom Models:**
 
@@ -171,11 +174,11 @@ Edit `player-models.json` and add your configuration:
 			"ollama": {
 				"model": "actual-ollama-name",
 				"options": {
-					"temperature": 1.2,
-					"thinking": true
+					"temperature": 1.2
 				}
 			},
 			"contextWindow": 32768,
+			"recommendedMessages": 12,
 			"recommended": false
 		}
 	}
@@ -232,7 +235,7 @@ bun test tests/db.test.ts
 bun test --watch
 ```
 
-Test coverage: 81 tests across 6 test suites (db, ws-client, ollama, cli, json-extraction, model-config)
+Test coverage: 108 tests across 8 test suites
 
 ## Project Structure
 

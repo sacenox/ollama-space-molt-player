@@ -58,6 +58,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 	}
 
 	if (command === "start" || command.startsWith("-")) {
+		const contextWindowArg = getArg(cleanArgs, "--context-window", "-cw");
 		const config: ClientConfig = {
 			instanceId: getArg(cleanArgs, "--instance", "-i"),
 			hint: getArg(cleanArgs, "--hint"),
@@ -67,7 +68,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 			tickRate: 20000,
 			ollamaTimeout: Number.parseInt(getArg(cleanArgs, "--ollama-timeout") || "30000"),
 			serverUrl: getArg(cleanArgs, "--server", "-s"),
-			contextWindowSize: Number.parseInt(getArg(cleanArgs, "--context-window", "-cw") || "20"),
+			contextWindowSize: contextWindowArg ? Number.parseInt(contextWindowArg) : undefined,
 		};
 
 		return {

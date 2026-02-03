@@ -41,6 +41,10 @@ export class GameClient {
 
 		const modelConfig = loadModelConfig(config.model);
 
+		if (this.config.contextWindowSize === undefined) {
+			this.config.contextWindowSize = modelConfig.recommendedMessages ?? 12;
+		}
+
 		this.ollama = new OllamaClient({
 			baseUrl: "http://localhost:11434",
 			model: modelConfig.ollama.model,
@@ -49,7 +53,7 @@ export class GameClient {
 		});
 
 		console.log(
-			`[${config.instanceId}] Using model: ${config.model} (${modelConfig.ollama.model})`,
+			`[${config.instanceId}] Using model: ${config.model} (${modelConfig.ollama.model}), context: ${config.contextWindowSize} messages`,
 		);
 
 		this.ws = new GameWebSocketClient({

@@ -9,6 +9,7 @@ export interface ModelConfig {
 		options: Record<string, unknown>;
 	};
 	contextWindow: number;
+	recommendedMessages?: number;
 	recommended: boolean;
 }
 

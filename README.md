@@ -25,7 +25,13 @@ See `docs/2026-02-03-client-refactor-design.md` for full details. Key principles
 # Install dependencies
 bun install
 
-# Install Ollama and default model
+# Configure Ollama server (REQUIRED)
+export OLLAMA_CONTEXT_LENGTH=16384
+
+# Start Ollama server
+ollama serve
+
+# In another terminal, pull the default model
 ollama pull lfm2.5-thinking
 
 # Run all checks (format, lint, test)
@@ -35,6 +41,8 @@ bun run check
 cd packages/client
 bun run start
 ```
+
+**Important:** Set `OLLAMA_CONTEXT_LENGTH=16384` before starting the Ollama server. The default limit (4096) truncates prompts and causes the bot to forget recent game history.
 
 Model configurations are defined in `player-models.json` at the repo root.
 
@@ -75,6 +83,41 @@ This project automatically strips all code comments during the check process. Th
 - `bun run check:format` - Format code with Prettier
 - `bun run check:lint` - Type-check with TypeScript
 - `bun run check:test` - Run tests with Bun
+
+## Troubleshooting
+
+### Ollama truncation warnings
+
+If you see `truncating input prompt` warnings in Ollama server logs:
+
+**Symptom:** Bot forgets recent game events and repeats failed actions
+
+**Cause:** Ollama's default context limit (4096 tokens) is too small for game state history
+
+**Solution:**
+
+1. Stop Ollama server
+2. Set environment variable: `export OLLAMA_CONTEXT_LENGTH=16384`
+3. Restart: `ollama serve`
+
+**For systemd service:**
+
+```bash
+sudo systemctl edit ollama
+```
+
+Add to the override file:
+
+```ini
+[Service]
+Environment="OLLAMA_CONTEXT_LENGTH=16384"
+```
+
+Then restart the service:
+
+```bash
+sudo systemctl restart ollama
+```
 
 ## References
 
