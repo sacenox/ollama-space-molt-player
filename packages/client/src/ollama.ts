@@ -62,9 +62,16 @@ export class OllamaClient {
 				throw new Error("Ollama response missing 'response' field");
 			}
 
+			const { cleanResponse, thinking: extractedThinking } = extractThinkingFromResponse(
+				data.response,
+			);
+			const trimmedThinking = data.thinking?.trim();
+			const finalThinking =
+				trimmedThinking && trimmedThinking.length > 0 ? trimmedThinking : extractedThinking;
+
 			return {
-				response: data.response.trim(),
-				thinking: data.thinking?.trim(),
+				response: cleanResponse.trim(),
+				thinking: finalThinking,
 			};
 		} catch (error) {
 			if (error instanceof Error) {
@@ -84,4 +91,16 @@ export class OllamaClient {
 	updateConfig(config: Partial<OllamaConfig>): void {
 		this.config = { ...this.config, ...config };
 	}
+}
+
+function extractThinkingFromResponse(response: string): {
+	cleanResponse: string;
+	thinking: string | undefined;
+} {
+	const thinkPattern = /<think>([\s\S]*?)<\/think>/g;
+	const matches = Array.from(response.matchAll(thinkPattern));
+	const blocks = matches.map((match) => match[1]?.trim() || "").filter((block) => block.length > 0);
+	const thinking = blocks.length > 0 ? blocks.join("\n") : undefined;
+	const cleanResponse = response.replace(thinkPattern, "").trim();
+	return { cleanResponse, thinking };
 }

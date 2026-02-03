@@ -249,4 +249,81 @@ describe("OllamaClient", () => {
 		expect(result.response).toBe("final answer");
 		expect(result.thinking).toBe("reasoning process here");
 	});
+
+	test("should extract thinking from response tags", async () => {
+		mockServer = Bun.serve({
+			port: 0,
+			fetch: async () => {
+				return Response.json({
+					model: "test",
+					created_at: new Date().toISOString(),
+					response:
+						'<think>First sentence. Second sentence. Third sentence.</think>\n{"type":"mine"}',
+					done: true,
+				});
+			},
+		});
+
+		client = new OllamaClient({
+			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: { thinking: true },
+			timeout: 8000,
+		});
+
+		const result = await client.generate("test");
+		expect(result.response).toBe('{"type":"mine"}');
+		expect(result.thinking).toBe("First sentence. Second sentence. Third sentence.");
+	});
+
+	test("should prefer Ollama thinking over response tags", async () => {
+		mockServer = Bun.serve({
+			port: 0,
+			fetch: async () => {
+				return Response.json({
+					model: "test",
+					created_at: new Date().toISOString(),
+					response: '<think>Tagged thinking</think>\n{"type":"scan"}',
+					thinking: "Ollama thinking",
+					done: true,
+				});
+			},
+		});
+
+		client = new OllamaClient({
+			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: { thinking: true },
+			timeout: 8000,
+		});
+
+		const result = await client.generate("test");
+		expect(result.response).toBe('{"type":"scan"}');
+		expect(result.thinking).toBe("Ollama thinking");
+	});
+
+	test("should ignore empty thinking tags", async () => {
+		mockServer = Bun.serve({
+			port: 0,
+			fetch: async () => {
+				return Response.json({
+					model: "test",
+					created_at: new Date().toISOString(),
+					response: '<think>\n\t\n</think>\n{"type":"dock"}',
+					done: true,
+				});
+			},
+		});
+
+		client = new OllamaClient({
+			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: { thinking: true },
+			timeout: 8000,
+		});
+
+		const result = await client.generate("test");
+		expect(result.response).toBe('{"type":"dock"}');
+		expect(result.thinking).toBeUndefined();
+	});
 });

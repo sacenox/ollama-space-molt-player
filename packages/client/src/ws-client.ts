@@ -31,6 +31,7 @@ export class GameWebSocketClient {
 				this.ws = new WebSocket(this.config.url);
 
 				this.ws.onopen = () => {
+					console.log("on socket open");
 					this.isConnected = true;
 					this.reconnectAttempt = 0;
 					resolved = true;

@@ -1,315 +1,461 @@
-import type {
-	ChatMessageMessage,
-	CombatUpdateMessage,
-	ErrorMessage,
-	LoggedInMessage,
-	MiningYieldMessage,
-	PlayerDiedMessage,
-	RegisteredMessage,
-	ScanResultMessage,
-	ServerMessage,
-	TradeOfferReceivedMessage,
-	WelcomeMessage,
-} from "./types.ts";
+import type { BaseCommand, ServerMessage } from "./types.ts";
 
-export function logServerMessage(
-	instanceId: string,
-	message: ServerMessage,
-	verbose = false,
+const SUMMARY_MAX_LENGTH = 140;
+const DETAIL_LINE_MAX_LENGTH = 200;
+
+export type LogContext = {
+	tick: number;
+	instanceId: string;
+	username?: string | null;
+	verbose: boolean;
+};
+
+type LogDirection = "in" | "out";
+type LogLevel = "info" | "warn" | "error";
+
+export function log(
+	context: LogContext,
+	direction: LogDirection,
+	summary: string,
+	details?: unknown,
+	level: LogLevel = "info",
 ): void {
-	const prefix = `[${instanceId}] ← ${message.type}`;
-
-	switch (message.type) {
-		case "welcome": {
-			const p = (message as WelcomeMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Version: ${p.version} (${p.release_date})`);
-			console.log(`  Tick rate: ${p.tick_rate}s, Current tick: ${p.current_tick}`);
-			console.log(`  Server time: ${p.server_time}`);
-			console.log(`  Website: ${p.website}`);
-			if (p.motd) console.log(`  MOTD: ${p.motd}`);
-			if (p.release_notes.length > 0) {
-				console.log(`  Release notes:`);
-				p.release_notes.forEach((note) => console.log(`    - ${note}`));
-			}
-			break;
-		}
-		case "registered": {
-			const p = (message as RegisteredMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Player ID: ${p.player_id}`);
-			console.log(`  Token: ${p.token.substring(0, 8)}...`);
-			break;
-		}
-		case "logged_in": {
-			const p = (message as LoggedInMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Player: ${p.player.username} (${p.player.empire})`);
-			console.log(`  Credits: ${p.player.credits}, Location: ${p.system.name} > ${p.poi.name}`);
-			if (!verbose) break;
-			console.log(`  Home base: ${p.player.home_base || "none"}`);
-			if (p.player.docked_at_base) console.log(`  Docked at: ${p.player.docked_at_base}`);
-			if (p.player.status_message) console.log(`  Status: ${p.player.status_message}`);
-			if (p.player.clan_tag) console.log(`  Clan: ${p.player.clan_tag}`);
-			if (p.player.faction_id) {
-				console.log(`  Faction: ${p.player.faction_id} (rank: ${p.player.faction_rank})`);
-			}
-			console.log(`  System: ${p.system.description || "No description"}`);
-			console.log(
-				`    Empire: ${p.system.empire || "neutral"}, Police: ${p.system.police_level || 0}`,
-			);
-			if (p.system.connections && p.system.connections.length > 0) {
-				console.log(`    Connected to: ${p.system.connections.join(", ")}`);
-			}
-			console.log(`  POI: ${p.poi.type} - ${p.poi.description || "No description"}`);
-			if (p.poi.base_id) console.log(`    Base: ${p.poi.base_id}`);
-			if (p.poi.resources && p.poi.resources.length > 0) {
-				console.log(`    Resources:`);
-				p.poi.resources.forEach((r: any) =>
-					console.log(`      - ${r.resource_id}: ${r.remaining} (richness: ${r.richness})`),
-				);
-			}
-			console.log(`  Ship: ${p.ship.name} (${p.ship.class_id})`);
-			console.log(
-				`    Hull: ${p.ship.hull}/${p.ship.max_hull}, Shield: ${p.ship.shield}/${p.ship.max_shield} (regen: ${p.ship.shield_recharge})`,
-			);
-			console.log(`    Armor: ${p.ship.armor}, Speed: ${p.ship.speed}`);
-			console.log(
-				`    Fuel: ${p.ship.fuel}/${p.ship.max_fuel}, Cargo: ${p.ship.cargo_used}/${p.ship.cargo_capacity}`,
-			);
-			console.log(
-				`    CPU: ${p.ship.cpu_used}/${p.ship.cpu_capacity}, Power: ${p.ship.power_used}/${p.ship.power_capacity}`,
-			);
-			if (p.ship.modules && p.ship.modules.length > 0) {
-				console.log(`    Modules: ${p.ship.modules.join(", ")}`);
-			}
-			if (p.ship.cargo && p.ship.cargo.length > 0) {
-				console.log(`    Cargo:`);
-				p.ship.cargo.forEach((item: any) =>
-					console.log(`      - ${item.item_id}: ${item.quantity}`),
-				);
-			}
-			if (p.player.skills && Object.keys(p.player.skills).length > 0) {
-				console.log(`  Skills:`);
-				Object.entries(p.player.skills).forEach(([skill, data]: [string, any]) =>
-					console.log(`    - ${skill}: level ${data.level} (${data.xp} XP)`),
-				);
-			}
-			if (p.player.stats) {
-				const s = p.player.stats;
-				console.log(`  Stats:`);
-				console.log(`    Ships destroyed: ${s.ships_destroyed}, Deaths: ${s.times_destroyed}`);
-				console.log(`    Ore mined: ${s.ore_mined}, Items crafted: ${s.items_crafted}`);
-				console.log(`    Credits earned: ${s.credits_earned}, spent: ${s.credits_spent}`);
-				console.log(
-					`    Trades: ${s.trades_completed}, Systems discovered: ${s.systems_discovered}`,
-				);
-			}
-			break;
-		}
-		case "state_update": {
-			const p = (message as any).payload;
-			console.log(`${prefix} (tick ${p.tick})`);
-			console.log(`  Player: ${p.player.username}, Credits: ${p.player.credits}`);
-			console.log(
-				`  Location: ${p.player.current_system} > ${p.player.current_poi}${p.player.docked_at_base ? ` (docked)` : ""}`,
-			);
-			if (!verbose) break;
-			console.log(
-				`  Ship: Hull ${p.ship.hull}/${p.ship.max_hull}, Shield ${p.ship.shield}/${p.ship.max_shield}`,
-			);
-			console.log(
-				`    Fuel: ${p.ship.fuel}/${p.ship.max_fuel}, Cargo: ${p.ship.cargo_used}/${p.ship.cargo_capacity}`,
-			);
-			console.log(
-				`    CPU: ${p.ship.cpu_used}/${p.ship.cpu_capacity}, Power: ${p.ship.power_used}/${p.ship.power_capacity}`,
-			);
-			if (p.in_combat) console.log(`  IN COMBAT`);
-			if (p.player.is_cloaked) console.log(`  CLOAKED`);
-			if (p.travel_progress !== undefined) {
-				console.log(
-					`  Traveling (${p.travel_type}): ${Math.round(p.travel_progress * 100)}% to ${p.travel_destination} (ETA: tick ${p.travel_arrival_tick})`,
-				);
-			}
-			if (p.nearby && p.nearby.length > 0) {
-				console.log(`  Nearby players: ${p.nearby.length}`);
-				p.nearby.forEach((np: any) => {
-					let info = `    - ${np.username}`;
-					if (np.ship_class) info += ` (${np.ship_class})`;
-					if (np.faction_tag) info += ` [${np.faction_tag}]`;
-					if (np.in_combat) info += ` [COMBAT]`;
-					if (np.status_message) info += ` - ${np.status_message}`;
-					console.log(info);
-				});
-			}
-			if (p.player.skills && Object.keys(p.player.skills).length > 0) {
-				console.log(
-					`  Skills: ${Object.entries(p.player.skills)
-						.map(([s, d]: [string, any]) => `${s}:${d.level}`)
-						.join(", ")}`,
-				);
-			}
-			break;
-		}
-		case "error": {
-			const p = (message as ErrorMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Code: ${p.code}`);
-			console.log(`  Message: ${p.message}`);
-			break;
-		}
-		case "tick": {
-			const p = message.payload as { tick: number };
-			console.log(`${prefix} ${p.tick}`);
-			break;
-		}
-		case "ok": {
-			const p = message.payload as any;
-			if (!p || Object.keys(p).length === 0) {
-				console.log(`${prefix}`);
-			} else {
-				console.log(`${prefix}`);
-				logPayloadFields(p, "  ", verbose, { current: 0 });
-			}
-			break;
-		}
-		case "chat_message": {
-			const p = (message as ChatMessageMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Channel: ${p.channel}`);
-			console.log(`  From: ${p.sender} (${p.sender_id})`);
-			console.log(`  Message: ${p.content}`);
-			if (p.timestamp) console.log(`  Time: ${p.timestamp}`);
-			break;
-		}
-		case "combat_update": {
-			const p = (message as CombatUpdateMessage).payload;
-			console.log(`${prefix} (tick ${p.tick})`);
-			console.log(`  Attacker: ${p.attacker}`);
-			console.log(`  Target: ${p.target}`);
-			console.log(`  Damage: ${p.damage} ${p.damage_type || ""}`);
-			if (p.shield_hit !== undefined) console.log(`  Shield hit: ${p.shield_hit}`);
-			if (p.hull_hit !== undefined) console.log(`  Hull hit: ${p.hull_hit}`);
-			if (p.destroyed) console.log(`  TARGET DESTROYED`);
-			break;
-		}
-		case "player_died": {
-			const p = (message as PlayerDiedMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Killed by: ${p.killer_name || "environment"}`);
-			if (p.clone_cost) console.log(`  Clone cost: ${p.clone_cost}`);
-			if (p.insurance_payout) console.log(`  Insurance payout: ${p.insurance_payout}`);
-			if (p.ship_lost) console.log(`  Ship lost: ${p.ship_lost}`);
-			if (p.respawn_base) console.log(`  Respawn at: ${p.respawn_base}`);
-			if (p.wreck_id) console.log(`  Wreck ID: ${p.wreck_id}`);
-			break;
-		}
-		case "mining_yield": {
-			const p = (message as MiningYieldMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Resource: ${p.resource_id}`);
-			console.log(`  Quantity: ${p.quantity}`);
-			if (p.remaining !== undefined) console.log(`  Remaining: ${p.remaining}`);
-			break;
-		}
-		case "scan_result": {
-			const p = (message as ScanResultMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Target: ${p.target_id}`);
-			console.log(`  Success: ${p.success}`);
-			if (p.revealed_info) console.log(`  Revealed: ${p.revealed_info.join(", ")}`);
-			if (p.username) console.log(`  Username: ${p.username}`);
-			if (p.ship_class) console.log(`  Ship class: ${p.ship_class}`);
-			if (p.hull !== undefined) console.log(`  Hull: ${p.hull}`);
-			if (p.shield !== undefined) console.log(`  Shield: ${p.shield}`);
-			break;
-		}
-		case "trade_offer_received": {
-			const p = (message as TradeOfferReceivedMessage).payload;
-			console.log(`${prefix}`);
-			console.log(`  Trade ID: ${p.trade_id}`);
-			console.log(`  From: ${p.from_name} (${p.from_player})`);
-			console.log(`  Offering:`);
-			if (p.offer_items && p.offer_items.length > 0) {
-				p.offer_items.forEach((item: any) =>
-					console.log(`    - ${item.item_id}: ${item.quantity}`),
-				);
-			}
-			if (p.offer_credits > 0) console.log(`    - Credits: ${p.offer_credits}`);
-			console.log(`  Requesting:`);
-			if (p.request_items && p.request_items.length > 0) {
-				p.request_items.forEach((item: any) =>
-					console.log(`    - ${item.item_id}: ${item.quantity}`),
-				);
-			}
-			if (p.request_credits > 0) console.log(`    - Credits: ${p.request_credits}`);
-			break;
-		}
-		default:
-			console.log(`${prefix}`);
-			if ((message as any).payload) {
-				logPayloadFields((message as any).payload, "  ", verbose, { current: 0 });
-			}
+	const identifier = context.username || context.instanceId;
+	const tick = Number.isFinite(context.tick) ? context.tick : 0;
+	const arrow = direction === "in" ? "←" : "→";
+	const header = `${tick} | [${identifier}] | ${arrow} | ${summary}`;
+	const lines = formatDetailLines(details, context.verbose);
+	const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+	logger(header);
+	if (lines.length > 0) {
+		lines.forEach((line) => logger(`  ${line}`));
 	}
 }
 
-export function logPayloadFields(
-	payload: any,
-	indent: string,
-	verbose = false,
-	lineCount = { current: 0 },
-): void {
-	if (!payload || typeof payload !== "object") {
-		console.log(`${indent}${String(payload)}`);
-		lineCount.current++;
-		return;
+export function logServerMessage(context: LogContext, message: ServerMessage): void {
+	const summary = getServerSummary(message);
+	const details = getServerDetails(message, context.verbose);
+	log(context, "in", summary, details);
+}
+
+export function logClientCommand(context: LogContext, command: BaseCommand): void {
+	const maskedPayload = maskSensitiveData(command.payload);
+	const summary = command.payload
+		? `${command.type} (${formatPayload(maskedPayload, SUMMARY_MAX_LENGTH)})`
+		: command.type;
+	log(context, "out", summary, maskedPayload);
+}
+
+export function logClientEvent(context: LogContext, message: string, details?: unknown): void {
+	log(context, "out", message, details);
+}
+
+export function logClientWarning(context: LogContext, message: string, details?: unknown): void {
+	log(context, "out", message, details, "warn");
+}
+
+export function logClientError(context: LogContext, message: string, details?: unknown): void {
+	const normalized = normalizeErrorDetails(details);
+	log(context, "out", message, normalized, "error");
+}
+
+export function logThinking(context: LogContext, thinking: string): void {
+	const formatted = formatThinking(thinking, context.verbose);
+	log(context, "out", "thinking", formatted);
+}
+
+export function formatThinking(thinking: string, verbose: boolean): string {
+	if (verbose) {
+		return thinking;
 	}
 
+	const sentences = splitSentences(thinking);
+	if (sentences.length <= 3) {
+		return sentences.join(" ").trim();
+	}
+	const first = sentences[0];
+	const lastTwo = sentences.slice(-2);
+	const omittedCount = sentences.length - 3;
+	return `${first} [... ${omittedCount} sentences omitted ...] ${lastTwo.join(" ")}`.trim();
+}
+
+function splitSentences(text: string): string[] {
+	const normalized = text.replace(/\s+/g, " ").trim();
+	if (!normalized) {
+		return [];
+	}
+	const matches = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+	if (!matches) {
+		return [normalized];
+	}
+	return matches.map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 0);
+}
+
+function normalizeErrorDetails(details: unknown): unknown {
+	if (details instanceof Error) {
+		return {
+			message: details.message,
+			stack: details.stack,
+		};
+	}
+	return details;
+}
+
+function formatDetailLines(details: unknown, verbose: boolean): string[] {
+	if (details === undefined || details === null) {
+		return [];
+	}
+	if (typeof details === "string") {
+		return formatMultiline(details, verbose);
+	}
+	return formatPayloadLines(details, "", verbose, { current: 0 });
+}
+
+function formatMultiline(text: string, verbose: boolean): string[] {
+	const lines = text.split("\n");
+	const truncated =
+		verbose || lines.length <= 5
+			? lines
+			: [lines[0], `[... ${lines.length - 4} more lines ...]`, ...lines.slice(-3)];
+	return truncated.map((line) => truncateLine(line));
+}
+
+function truncateLine(line: string): string {
+	if (line.length <= DETAIL_LINE_MAX_LENGTH) {
+		return line;
+	}
+	return `${line.substring(0, DETAIL_LINE_MAX_LENGTH)}...`;
+}
+
+function formatPayloadLines(
+	payload: unknown,
+	indent: string,
+	verbose: boolean,
+	lineCount: { current: number },
+): string[] {
+	if (!payload || typeof payload !== "object") {
+		lineCount.current++;
+		return [`${indent}${String(payload)}`];
+	}
+
+	const lines: string[] = [];
 	for (const [key, value] of Object.entries(payload)) {
 		if (!verbose && lineCount.current >= 2) {
-			return;
+			return lines;
 		}
-
 		if (value === null || value === undefined) {
 			continue;
-		} else if (Array.isArray(value)) {
+		}
+		if (Array.isArray(value)) {
 			if (value.length === 0) {
-				console.log(`${indent}${key}: []`);
+				lines.push(`${indent}${key}: []`);
 				lineCount.current++;
 			} else if (typeof value[0] === "object") {
-				console.log(`${indent}${key}: [${value.length} items]`);
+				lines.push(`${indent}${key}: [${value.length} items]`);
 				lineCount.current++;
 				if (verbose) {
 					value.forEach((item, idx) => {
-						console.log(`${indent}  [${idx}]:`);
-						logPayloadFields(item, `${indent}    `, verbose, lineCount);
+						lines.push(`${indent}  [${idx}]:`);
+						lineCount.current++;
+						lines.push(...formatPayloadLines(item, `${indent}    `, verbose, lineCount));
 					});
 				}
 			} else {
-				console.log(`${indent}${key}: [${value.join(", ")}]`);
+				lines.push(`${indent}${key}: [${value.join(", ")}]`);
 				lineCount.current++;
 			}
 		} else if (typeof value === "object") {
-			console.log(`${indent}${key}:`);
+			lines.push(`${indent}${key}:`);
 			lineCount.current++;
 			if (verbose || lineCount.current < 2) {
-				logPayloadFields(value, `${indent}  `, verbose, lineCount);
+				lines.push(...formatPayloadLines(value, `${indent}  `, verbose, lineCount));
 			}
 		} else if (typeof value === "string") {
-			if (value.length > 100) {
-				console.log(`${indent}${key}: ${value.substring(0, 100)}...`);
-			} else {
-				console.log(`${indent}${key}: ${value}`);
-			}
+			const truncated = value.length > 100 ? `${value.substring(0, 100)}...` : value;
+			lines.push(`${indent}${key}: ${truncated}`);
 			lineCount.current++;
 		} else {
-			console.log(`${indent}${key}: ${value}`);
+			lines.push(`${indent}${key}: ${String(value)}`);
 			lineCount.current++;
+		}
+	}
+
+	return lines.map((line) => truncateLine(line));
+}
+
+function maskSensitiveData(payload: unknown): unknown {
+	if (payload === null || payload === undefined) {
+		return payload;
+	}
+	if (typeof payload !== "object") {
+		return payload;
+	}
+	if (Array.isArray(payload)) {
+		return payload.map((item) => maskSensitiveData(item));
+	}
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
+		if (typeof key === "string" && key.toLowerCase().includes("token")) {
+			if (typeof value === "string") {
+				result[key] = value.length > 8 ? `${value.substring(0, 8)}...` : value;
+			} else {
+				result[key] = value;
+			}
+		} else {
+			result[key] = maskSensitiveData(value);
+		}
+	}
+	return result;
+}
+
+function getServerSummary(message: ServerMessage): string {
+	switch (message.type) {
+		case "welcome": {
+			const p = message.payload;
+			return `welcome (version: ${p.version}, tick_rate: ${p.tick_rate}s, current_tick: ${p.current_tick})`;
+		}
+		case "registered": {
+			const p = message.payload;
+			const masked = maskSensitiveData({ token: p.token }) as { token: string };
+			return `registered (player_id: ${p.player_id}, token: ${masked.token})`;
+		}
+		case "logged_in": {
+			const p = message.payload;
+			return `logged_in (player: ${p.player.username}, empire: ${p.player.empire}, location: ${p.system.name} > ${p.poi.name})`;
+		}
+		case "state_update": {
+			const p = message.payload;
+			const docked = p.player.docked_at_base ? " (docked)" : "";
+			return `state_update (tick: ${p.tick}, player: ${p.player.username}, credits: ${p.player.credits}, location: ${p.player.current_system} > ${p.player.current_poi}${docked})`;
+		}
+		case "tick": {
+			return `tick (${message.payload.tick})`;
+		}
+		case "ok": {
+			const payload = message.payload;
+			if (!payload || Object.keys(payload).length === 0) {
+				return "ok";
+			}
+			return `ok (${formatPayload(maskSensitiveData(payload), SUMMARY_MAX_LENGTH)})`;
+		}
+		case "error": {
+			return `error (code: ${message.payload.code})`;
+		}
+		case "chat_message": {
+			const p = message.payload;
+			return `chat_message (channel: ${p.channel}, from: ${p.sender})`;
+		}
+		case "combat_update": {
+			const p = message.payload;
+			const damageType = p.damage_type ? ` ${p.damage_type}` : "";
+			return `combat_update (tick: ${p.tick}, attacker: ${p.attacker}, target: ${p.target}, damage: ${p.damage}${damageType})`;
+		}
+		case "player_died": {
+			const p = message.payload;
+			return `player_died (killed_by: ${p.killer_name || "environment"})`;
+		}
+		case "mining_yield": {
+			const p = message.payload;
+			return `mining_yield (resource: ${p.resource_id}, quantity: ${p.quantity})`;
+		}
+		case "scan_result": {
+			const p = message.payload;
+			return `scan_result (target: ${p.target_id}, success: ${p.success})`;
+		}
+		case "trade_offer_received": {
+			const p = message.payload;
+			return `trade_offer_received (trade_id: ${p.trade_id}, from: ${p.from_name})`;
+		}
+		default: {
+			const fallback = message as { type: string; payload?: unknown };
+			const payload = fallback.payload;
+			if (!payload) {
+				return fallback.type;
+			}
+			return `${fallback.type} (${formatPayload(maskSensitiveData(payload), SUMMARY_MAX_LENGTH)})`;
 		}
 	}
 }
 
-export function formatPayload(payload: unknown): string {
+function getServerDetails(message: ServerMessage, verbose: boolean): unknown {
+	switch (message.type) {
+		case "welcome": {
+			const p = message.payload;
+			return maskSensitiveData({
+				version: p.version,
+				release_date: p.release_date,
+				tick_rate: p.tick_rate,
+				current_tick: p.current_tick,
+				server_time: p.server_time,
+				website: p.website,
+				motd: p.motd,
+				release_notes: verbose ? p.release_notes : p.release_notes?.length || 0,
+			});
+		}
+		case "registered": {
+			const p = message.payload;
+			return maskSensitiveData({
+				player_id: p.player_id,
+				token: p.token,
+			});
+		}
+		case "logged_in": {
+			const p = message.payload;
+			if (!verbose) {
+				return maskSensitiveData({
+					player: {
+						username: p.player.username,
+						empire: p.player.empire,
+						credits: p.player.credits,
+					},
+					location: {
+						system: p.system.name,
+						poi: p.poi.name,
+					},
+					ship: {
+						name: p.ship.name,
+						class_id: p.ship.class_id,
+						hull: p.ship.hull,
+						max_hull: p.ship.max_hull,
+						shield: p.ship.shield,
+						max_shield: p.ship.max_shield,
+						fuel: p.ship.fuel,
+						max_fuel: p.ship.max_fuel,
+					},
+				});
+			}
+			return maskSensitiveData({
+				player: {
+					username: p.player.username,
+					empire: p.player.empire,
+					credits: p.player.credits,
+					home_base: p.player.home_base,
+					docked_at_base: p.player.docked_at_base,
+					status_message: p.player.status_message,
+					clan_tag: p.player.clan_tag,
+					faction_id: p.player.faction_id,
+					faction_rank: p.player.faction_rank,
+				},
+				system: {
+					name: p.system.name,
+					empire: p.system.empire,
+					police_level: p.system.police_level,
+					connections: p.system.connections,
+				},
+				poi: {
+					name: p.poi.name,
+					type: p.poi.type,
+					base_id: p.poi.base_id,
+					resources: p.poi.resources,
+				},
+				ship: {
+					name: p.ship.name,
+					class_id: p.ship.class_id,
+					hull: p.ship.hull,
+					max_hull: p.ship.max_hull,
+					shield: p.ship.shield,
+					max_shield: p.ship.max_shield,
+					fuel: p.ship.fuel,
+					max_fuel: p.ship.max_fuel,
+					cargo_used: p.ship.cargo_used,
+					cargo_capacity: p.ship.cargo_capacity,
+					modules: p.ship.modules,
+				},
+			});
+		}
+		case "state_update": {
+			const p = message.payload;
+			const travel =
+				p.travel_progress !== undefined
+					? {
+							progress: Math.round(p.travel_progress * 100),
+							type: p.travel_type,
+							destination: p.travel_destination,
+							arrival_tick: p.travel_arrival_tick,
+						}
+					: null;
+			if (!verbose) {
+				return maskSensitiveData({
+					nearby_count: p.nearby?.length || 0,
+					in_combat: p.in_combat,
+					travel,
+				});
+			}
+			return maskSensitiveData({
+				tick: p.tick,
+				player: {
+					username: p.player.username,
+					credits: p.player.credits,
+					current_system: p.player.current_system,
+					current_poi: p.player.current_poi,
+					docked_at_base: p.player.docked_at_base,
+					status_message: p.player.status_message,
+				},
+				ship: {
+					hull: p.ship.hull,
+					max_hull: p.ship.max_hull,
+					shield: p.ship.shield,
+					max_shield: p.ship.max_shield,
+					fuel: p.ship.fuel,
+					max_fuel: p.ship.max_fuel,
+					cargo_used: p.ship.cargo_used,
+					cargo_capacity: p.ship.cargo_capacity,
+				},
+				nearby_count: p.nearby?.length || 0,
+				in_combat: p.in_combat,
+				travel,
+			});
+		}
+		case "error": {
+			return maskSensitiveData(message.payload);
+		}
+		case "chat_message": {
+			const p = message.payload;
+			return maskSensitiveData({
+				channel: p.channel,
+				sender: p.sender,
+				sender_id: p.sender_id,
+				message: p.content,
+				timestamp: p.timestamp,
+			});
+		}
+		case "combat_update": {
+			return maskSensitiveData(message.payload);
+		}
+		case "player_died": {
+			return maskSensitiveData(message.payload);
+		}
+		case "mining_yield": {
+			return maskSensitiveData(message.payload);
+		}
+		case "scan_result": {
+			return maskSensitiveData(message.payload);
+		}
+		case "trade_offer_received": {
+			const p = message.payload;
+			return maskSensitiveData({
+				trade_id: p.trade_id,
+				from_player: p.from_player,
+				from_name: p.from_name,
+				offer_items: verbose ? p.offer_items : p.offer_items?.length || 0,
+				offer_credits: p.offer_credits,
+				request_items: verbose ? p.request_items : p.request_items?.length || 0,
+				request_credits: p.request_credits,
+			});
+		}
+		case "ok": {
+			return maskSensitiveData(message.payload);
+		}
+		case "tick": {
+			return undefined;
+		}
+		default: {
+			return maskSensitiveData((message as { payload?: unknown }).payload);
+		}
+	}
+}
+
+export function formatPayload(payload: unknown, maxLength = SUMMARY_MAX_LENGTH): string {
 	if (typeof payload !== "object" || payload === null) {
 		return String(payload);
 	}
@@ -356,5 +502,6 @@ export function formatPayload(payload: unknown): string {
 		}
 	}
 
-	return parts.join(", ");
+	const joined = parts.join(", ");
+	return joined.length > maxLength ? `${joined.substring(0, maxLength)}...` : joined;
 }

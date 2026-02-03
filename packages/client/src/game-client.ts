@@ -1,7 +1,15 @@
 import { GAME_API } from "./api-definition.ts";
 import { getArchetypeListText } from "./archetypes.ts";
 import type { GameDatabase } from "./db.ts";
-import { formatPayload, logServerMessage } from "./logging.ts";
+import {
+	logClientCommand,
+	logClientError,
+	logClientEvent,
+	logClientWarning,
+	logServerMessage,
+	logThinking,
+	type LogContext,
+} from "./logging.ts";
 import { loadModelConfig } from "./model-config.ts";
 import { OllamaClient } from "./ollama.ts";
 import { PLAYER_API_REFERENCE } from "./player-api-reference.ts";
@@ -18,9 +26,9 @@ import type {
 } from "./types.ts";
 import { GameWebSocketClient } from "./ws-client.ts";
 
-export class GameClient {
-	private static readonly MAX_LOG_LENGTH = 500;
+const EMPIRES = ["solarian", "voidborn", "crimson", "nebula", "outerrim"];
 
+export class GameClient {
 	private db: GameDatabase;
 	private ws: GameWebSocketClient;
 	private ollama: OllamaClient;
@@ -29,7 +37,6 @@ export class GameClient {
 	private lastProcessedTick = -1;
 	private tickRate: number;
 	private watchdogTimer: Timer | null = null;
-	private isRunning = false;
 	private isProcessingTick = false;
 	private waitingForRegistration = false;
 	private registrationData: { username: string; empire: string } | null = null;
@@ -52,15 +59,17 @@ export class GameClient {
 			timeout: config.ollamaTimeout,
 		});
 
-		console.log(
-			`[${config.instanceId}] Using model: ${config.model} (${modelConfig.ollama.model}), context: ${config.contextWindowSize} messages`,
-		);
+		logClientEvent(this.getLogContext(), "Using model", {
+			model: config.model,
+			ollama_model: modelConfig.ollama.model,
+			context_messages: config.contextWindowSize,
+		});
 
 		this.ws = new GameWebSocketClient({
 			url: config.serverUrl || "wss://game.spacemolt.com/ws",
 			onMessage: (msg) => {
 				this.handleServerMessage(msg).catch((error) => {
-					console.error(`[${this.config.instanceId}] Unhandled error in message handler:`, error);
+					logClientError(this.getLogContext(), "Unhandled error in message handler", error);
 				});
 			},
 			onConnect: () => this.handleConnect(),
@@ -70,33 +79,31 @@ export class GameClient {
 	}
 
 	async start(): Promise<void> {
-		console.log(`[${this.config.instanceId}] Starting game client...`);
+		logClientEvent(this.getLogContext(), "Starting game client");
 
 		await this.ws.connect();
-		this.isRunning = true;
 	}
 
 	stop(): void {
-		this.isRunning = false;
 		if (this.watchdogTimer) {
 			clearTimeout(this.watchdogTimer);
 			this.watchdogTimer = null;
 		}
 		this.ws.disconnect();
 		this.db.close();
-		console.log(`[${this.config.instanceId}] Client stopped`);
+		logClientEvent(this.getLogContext(), "Client stopped");
 	}
 
 	private handleConnect(): void {
-		console.log(`[${this.config.instanceId}] Connected to server`);
+		logClientEvent(this.getLogContext(), "Connected to server");
 	}
 
 	private handleDisconnect(): void {
-		console.log(`[${this.config.instanceId}] Disconnected from server`);
+		logClientWarning(this.getLogContext(), "Disconnected from server");
 	}
 
 	private handleError(error: Error): void {
-		console.error(`[${this.config.instanceId}] Error:`, error.message);
+		logClientError(this.getLogContext(), "Connection error", error);
 		this.db.saveMessage(this.currentTick, "client", {
 			error: "Connection error occurred",
 			code: "CONNECTION_ERROR",
@@ -105,7 +112,7 @@ export class GameClient {
 
 	private async handleServerMessage(message: ServerMessage): Promise<void> {
 		try {
-			logServerMessage(this.config.instanceId || "default", message, this.config.verbose || false);
+			logServerMessage(this.getLogContext(), message);
 
 			switch (message.type) {
 				case "welcome":
@@ -136,7 +143,7 @@ export class GameClient {
 					break;
 			}
 		} catch (error) {
-			console.error(`[${this.config.instanceId}] Error handling ${message.type} message:`, error);
+			logClientError(this.getLogContext(), `Error handling ${message.type} message`, error);
 			this.db.saveMessage(this.currentTick, "client", {
 				error: `Failed to handle ${message.type} message: ${error instanceof Error ? error.message : String(error)}`,
 				code: "MESSAGE_HANDLER_ERROR",
@@ -150,23 +157,23 @@ export class GameClient {
 		this.lastProcessedTick = this.currentTick - 1;
 		this.startWatchdog();
 
-		if (this.isRunning) {
-			const activeUsername = this.db.getActiveUsername();
-			if (activeUsername) {
-				console.log(`[${this.config.instanceId}] Auto-login as ${activeUsername.username}`);
-				this.ws.send({
-					type: "login",
-					payload: { username: activeUsername.username, token: activeUsername.token },
+		const activeUsername = this.db.getActiveUsername();
+		if (activeUsername) {
+			logClientEvent(this.getLogContext(activeUsername.username), "Auto-login", {
+				username: activeUsername.username,
+			});
+			this.ws.send({
+				type: "login",
+				payload: { username: activeUsername.username, token: activeUsername.token },
+			});
+		} else {
+			await this.promptForRegistration().catch((error) => {
+				logClientError(this.getLogContext(), "Registration prompt error", error);
+				this.db.saveMessage(this.currentTick, "client", {
+					error: "Registration prompt failed",
+					code: "REGISTRATION_PROMPT_ERROR",
 				});
-			} else {
-				await this.promptForRegistration().catch((error) => {
-					console.error(`[${this.config.instanceId}] Registration prompt error:`, error);
-					this.db.saveMessage(this.currentTick, "client", {
-						error: "Registration prompt failed",
-						code: "REGISTRATION_PROMPT_ERROR",
-					});
-				});
-			}
+			});
 		}
 	}
 
@@ -174,14 +181,18 @@ export class GameClient {
 		const newTick = message.payload.tick;
 
 		if (newTick <= this.lastProcessedTick) {
-			console.log(`[${this.config.instanceId}] Ignoring duplicate or stale tick ${newTick}`);
+			logClientWarning(this.getLogContext(), "Ignoring duplicate or stale tick", {
+				new_tick: newTick,
+				last_processed_tick: this.lastProcessedTick,
+			});
 			return false;
 		}
 
 		if (this.isProcessingTick) {
-			console.log(
-				`[${this.config.instanceId}] Skipping tick ${newTick}, still processing tick ${this.currentTick}`,
-			);
+			logClientWarning(this.getLogContext(), "Skipping tick, still processing", {
+				skipped_tick: newTick,
+				current_tick: this.currentTick,
+			});
 			return false;
 		}
 
@@ -190,21 +201,16 @@ export class GameClient {
 
 		this.startWatchdog();
 
-		if (this.isRunning) {
-			try {
-				await this.processTick();
-				this.lastProcessedTick = newTick;
-			} catch (error) {
-				console.error(`[${this.config.instanceId}] Tick processing error:`, error);
-				this.db.saveMessage(this.currentTick, "client", {
-					error: "Tick processing failed",
-					code: "TICK_PROCESSING_ERROR",
-				});
-			} finally {
-				this.isProcessingTick = false;
-			}
-		} else {
+		try {
+			await this.processTick();
 			this.lastProcessedTick = newTick;
+		} catch (error) {
+			logClientError(this.getLogContext(), "Tick processing error", error);
+			this.db.saveMessage(this.currentTick, "client", {
+				error: "Tick processing failed",
+				code: "TICK_PROCESSING_ERROR",
+			});
+		} finally {
 			this.isProcessingTick = false;
 		}
 
@@ -216,7 +222,7 @@ export class GameClient {
 			return;
 		}
 
-		console.log(`[${this.config.instanceId}] Registration successful`);
+		logClientEvent(this.getLogContext(this.registrationData.username), "Registration successful");
 
 		const characterPrompt = await this.generateCharacterPrompt(
 			this.registrationData.username,
@@ -231,10 +237,31 @@ export class GameClient {
 			this.currentTick,
 		);
 
-		console.log(`[${this.config.instanceId}] Character prompt generated and saved`);
+		logClientEvent(
+			this.getLogContext(this.registrationData.username),
+			"Character prompt generated and saved",
+		);
 
 		this.waitingForRegistration = false;
 		this.registrationData = null;
+	}
+
+	private shuffleArray<T>(array: T[]): T[] {
+		const shuffled = [...array];
+		for (let i = shuffled.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+		}
+		return shuffled;
+	}
+
+	private getApiSubset<K extends keyof typeof PLAYER_API_REFERENCE>(
+		commands: K[],
+	): Pick<typeof PLAYER_API_REFERENCE, K> {
+		return Object.fromEntries(commands.map((cmd) => [cmd, PLAYER_API_REFERENCE[cmd]])) as Pick<
+			typeof PLAYER_API_REFERENCE,
+			K
+		>;
 	}
 
 	private async generateCharacterPrompt(username: string, empire: string): Promise<string> {
@@ -245,7 +272,7 @@ export class GameClient {
 Choose a personality archetype from this list:
 ${archetypeList}
 
-Generate a concise character prompt (1-2 sentences) that captures this character's personality, goals, and playstyle based on your chosen archetype. This prompt will guide all future decisions this character makes in the game.
+Generate a concise role playing character prompt (5 sentences max) that captures this character's personality, goals, and playstyle based on your chosen personality archetype.
 
 Character prompt:`;
 
@@ -253,39 +280,37 @@ Character prompt:`;
 			const result = await this.ollama.generate(promptGeneration);
 
 			if (result.thinking) {
-				console.log(`[${this.config.instanceId}] Thinking: ${result.thinking}`);
+				logThinking(this.getLogContext(username), result.thinking);
 			}
 
 			return result.response;
 		} catch (error) {
-			console.error(`[${this.config.instanceId}] Failed to generate prompt:`, error);
+			logClientError(this.getLogContext(username), "Failed to generate prompt", error);
 			return `You are ${username}, a ${empire} player in SpaceMolt.`;
 		}
 	}
 
 	private async promptForRegistration(): Promise<void> {
-		const registerApi = {
-			register: PLAYER_API_REFERENCE.register,
-		};
-
 		const minimalContext = {
-			api: registerApi,
-			note: "You must register before you can play. Choose a creative username prefix - the system will add a unique suffix.",
+			api: this.getApiSubset(["register"]),
+			note: "You must register before you can play. Usernames MUST be alpha numeric and maximum 20 characters",
 		};
 
 		const contextJson = JSON.stringify(minimalContext);
-		const registrationPrompt = `You are playing a multiplayer space game called SpaceMolt. You need to register a username to play.
+		const shuffledEmpires = this.shuffleArray(EMPIRES);
+		const empireList = shuffledEmpires.join(", ");
+		const registrationPrompt = `You are playing a multiplayer space game called SpaceMolt, 🦞 **The Crustacean Cosmos** 🦞. You need to register a username to play.
 
 Game Context:
 ${contextJson}
 
-Choose a creative username prefix (the system will add a unique suffix for you).
-Choose an empire from: solarian, voidborn, crimson, nebula, outerrim
+Choose a creative username.
+Choose an empire from: ${empireList}
 
 CRITICAL: You must respond with ONLY valid JSON. No explanations, no markdown, just the JSON command.
 
 JSON Format:
-{"type": "register", "payload": {"username": "YourChosenPrefix", "empire": "solarian"}}
+{"type": "register", "payload": {"username": "[your username]", "empire": "[your empire]"}}
 
 Your JSON response:`;
 
@@ -293,7 +318,7 @@ Your JSON response:`;
 			const result = await this.ollama.generate(registrationPrompt);
 
 			if (result.thinking) {
-				console.log(`[${this.config.instanceId}] Thinking:\n${result.thinking}`);
+				logThinking(this.getLogContext(), result.thinking);
 			}
 
 			let command: BaseCommand;
@@ -312,14 +337,12 @@ Your JSON response:`;
 				throw new Error("Invalid registration payload: missing username or empire");
 			}
 
-			const instanceSuffix = `-${this.config.instanceId}`;
+			const instanceSuffix = `-${this.config.instanceId?.slice(0, 3).toLocaleLowerCase()}`;
 			if (!payload.username.endsWith(instanceSuffix)) {
 				payload.username = `${payload.username}${instanceSuffix}`;
 			}
 
-			console.log(
-				`[${this.config.instanceId}] → register (username: ${payload.username}, empire: ${payload.empire})`,
-			);
+			logClientCommand(this.getLogContext(payload.username), command);
 
 			this.waitingForRegistration = true;
 			this.registrationData = {
@@ -330,7 +353,7 @@ Your JSON response:`;
 			this.ws.send(command);
 			this.db.saveMessage(this.currentTick, "client", command);
 		} catch (error) {
-			console.error(`[${this.config.instanceId}] Registration prompt failed:`, error);
+			logClientError(this.getLogContext(), "Registration prompt failed", error);
 			this.db.saveMessage(this.currentTick, "client", {
 				error: error instanceof Error ? error.message : "Registration prompt failed",
 				code: "REGISTRATION_PROMPT_FAILED",
@@ -342,10 +365,16 @@ Your JSON response:`;
 
 	private handleServerError(message: ErrorMessage): void {
 		if (this.waitingForRegistration && this.registrationData) {
-			console.log(`[${this.config.instanceId}] Registration failed, retrying...`);
+			logClientWarning(
+				this.getLogContext(this.registrationData.username),
+				"Registration failed, retrying",
+				{
+					server_error: message.payload,
+				},
+			);
 			this.waitingForRegistration = false;
 			this.promptForRegistration().catch((error) => {
-				console.error(`[${this.config.instanceId}] Registration retry error:`, error);
+				logClientError(this.getLogContext(), "Registration retry error", error);
 			});
 		}
 	}
@@ -356,9 +385,9 @@ Your JSON response:`;
 		}
 
 		this.watchdogTimer = setTimeout(() => {
-			console.warn(
-				`[${this.config.instanceId}] No tick received for ${this.tickRate * 2}ms. Connection may be lost.`,
-			);
+			logClientWarning(this.getLogContext(), "No tick received within expected timeframe", {
+				wait_ms: this.tickRate * 2,
+			});
 			this.db.saveMessage(this.currentTick, "client", {
 				error: "No server tick received within expected timeframe",
 				code: "WATCHDOG_TIMEOUT",
@@ -373,13 +402,15 @@ Your JSON response:`;
 		const prompt = activeUsername?.prompt || "";
 		const hint = instance.hint || this.config.hint || undefined;
 
-		console.log(`[${this.config.instanceId}] Hint:`, hint || "(none)");
+		logClientEvent(this.getLogContext(activeUsername?.username), "Hint", {
+			hint: hint || "(none)",
+		});
 
 		const context = this.buildLLMContext(prompt, hint);
 
 		try {
 			const contextJson = JSON.stringify(context);
-			const fullPrompt = `You are playing a online multiplayer game, be social, role play as the player and stay in character. Game Context:
+			const fullPrompt = `You are playing a multiplayer space game called SpaceMolt, 🦞 **The Crustacean Cosmos** 🦞. Be social, role play and stay in character. Game Context:
 			
 ${contextJson}
 
@@ -399,7 +430,7 @@ Your JSON response:`;
 			const result = await this.ollama.generate(fullPrompt);
 
 			if (result.thinking) {
-				console.log(`[${this.config.instanceId}] Thinking:\n${result.thinking}`);
+				logThinking(this.getLogContext(activeUsername?.username), result.thinking);
 			}
 
 			let command: BaseCommand;
@@ -410,7 +441,9 @@ Your JSON response:`;
 			}
 
 			if (!command.type || typeof command.type !== "string") {
-				console.error(`[${this.config.instanceId}] LLM response: ${result.response}`);
+				logClientError(this.getLogContext(activeUsername?.username), "LLM response missing type", {
+					response: result.response,
+				});
 				throw new Error("Invalid command: missing or invalid 'type' field");
 			}
 
@@ -421,26 +454,20 @@ Your JSON response:`;
 					username: payload.username,
 					empire: payload.empire,
 				};
-				console.log(
-					`[${this.config.instanceId}] → register (username: ${payload.username}, empire: ${payload.empire})`,
-				);
+				logClientCommand(this.getLogContext(payload.username), command);
 			} else if (command.type === "login" && command.payload) {
 				const payload = command.payload as { username: string; token: string };
 				this.db.updateUsernameLastUsed(payload.username, this.currentTick);
-				console.log(
-					`[${this.config.instanceId}] → ${command.type}${command.payload ? ` (${formatPayload(command.payload)})` : ""}`,
-				);
+				logClientCommand(this.getLogContext(payload.username), command);
 			} else {
-				console.log(
-					`[${this.config.instanceId}] → ${command.type}${command.payload ? ` (${formatPayload(command.payload)})` : ""}`,
-				);
+				logClientCommand(this.getLogContext(activeUsername?.username), command);
 			}
 
 			this.ws.send(command);
 
 			this.db.saveMessage(this.currentTick, "client", command);
 		} catch (error) {
-			console.error(`[${this.config.instanceId}] LLM generation failed:`, error);
+			logClientError(this.getLogContext(activeUsername?.username), "LLM generation failed", error);
 			this.db.saveMessage(this.currentTick, "client", {
 				error: error instanceof Error ? error.message : "LLM generation failed",
 				code: "LLM_GENERATION_FAILED",
@@ -473,16 +500,9 @@ Your JSON response:`;
 			} catch {}
 		}
 
-		const truncated =
-			text.length > GameClient.MAX_LOG_LENGTH
-				? text.substring(0, GameClient.MAX_LOG_LENGTH) +
-					`... (${text.length - GameClient.MAX_LOG_LENGTH} more chars)`
-				: text;
-
-		console.error(
-			`[${this.config.instanceId}] Failed to parse LLM response. Raw response:`,
-			truncated,
-		);
+		logClientError(this.getLogContext(), "Failed to parse LLM response", {
+			response: text,
+		});
 
 		throw new Error("Response does not contain valid JSON command");
 	}
@@ -497,10 +517,10 @@ Your JSON response:`;
 					data: JSON.parse(msg.data),
 				};
 			} catch (error) {
-				console.error(
-					`[${this.config.instanceId}] Failed to parse message at tick ${msg.tick}:`,
-					error,
-				);
+				logClientError(this.getLogContext(), "Failed to parse message", {
+					tick: msg.tick,
+					error: error instanceof Error ? error.message : String(error),
+				});
 				return {
 					sender: msg.sender,
 					tick: msg.tick,
@@ -526,6 +546,17 @@ Your JSON response:`;
 				list: accounts,
 				description: "List of registered usernames and login token",
 			},
+		};
+	}
+
+	private getLogContext(username?: string | null): LogContext {
+		const resolvedUsername =
+			username !== undefined ? username : this.db.getActiveUsername()?.username || null;
+		return {
+			tick: this.currentTick,
+			instanceId: this.config.instanceId || "default",
+			username: resolvedUsername,
+			verbose: this.config.verbose || false,
 		};
 	}
 }
