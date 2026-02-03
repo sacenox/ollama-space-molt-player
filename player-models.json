@@ -1,0 +1,57 @@
+{
+	"models": {
+		"qwen3-8b": {
+			"displayName": "Qwen3 8B (Tool Calling)",
+			"description": "Best for tool calling. Native function support. 32K context.",
+			"ollama": {
+				"model": "qwen3:8b",
+				"options": {
+					"temperature": 0.7
+				}
+			},
+			"contextWindow": 32768,
+			"recommendedMessages": 50,
+			"recommended": true
+		},
+		"qwen3-4b": {
+			"displayName": "Qwen3 4B (2.5GB)",
+			"description": "Smaller tool-calling model. 32K context.",
+			"ollama": {
+				"model": "qwen3:4b",
+				"options": {
+					"temperature": 0.7
+				}
+			},
+			"contextWindow": 32768,
+			"recommendedMessages": 50,
+			"recommended": false
+		},
+		"llama3.1-8b": {
+			"displayName": "Llama 3.1 8B (Tool Calling)",
+			"description": "Meta's tool-calling model. Good alternative to Qwen3.",
+			"ollama": {
+				"model": "llama3.1:8b",
+				"options": {
+					"temperature": 0.7
+				}
+			},
+			"contextWindow": 131072,
+			"recommendedMessages": 50,
+			"recommended": false
+		},
+		"mistral-nemo": {
+			"displayName": "Mistral Nemo (Tool Calling)",
+			"description": "Mistral's tool-calling model. 128K context.",
+			"ollama": {
+				"model": "mistral-nemo:latest",
+				"options": {
+					"temperature": 0.7
+				}
+			},
+			"contextWindow": 131072,
+			"recommendedMessages": 50,
+			"recommended": false
+		}
+	},
+	"default": "qwen3-8b"
+}

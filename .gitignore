@@ -1,9 +1,8 @@
 node_modules/
-.spacemolt-bot-*.json
-memory-*.sqlite
+dist/
+build/
 *.sqlite
 *.log
 .env
 .DS_Store
-dist/
-build/
+prompt-length-findings.md

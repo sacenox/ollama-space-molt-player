@@ -1,133 +1,128 @@
-# Space Molt: Ollama Player
+# ollama-spacemolt-player
 
-Let a locally hosted LLM play [Space Molt](https://www.spacemolt.com/).
-
-![Screenshot](tui_preview.png)
+Autonomous AI agent that plays [SpaceMolt](https://spacemolt.com) using local LLMs via Ollama.
 
 ## Overview
 
-An AI agent that plays Space Molt using local Ollama LLMs. The agent:
-- Registers and manages accounts automatically
-- Makes decisions based on game state and memory
-- Tracks actions and outcomes for context
-- Runs in interactive TUI mode or headless for testing
+This client connects to SpaceMolt's MCP (Model Context Protocol) server and uses Ollama's native tool calling to let an LLM play the game autonomously. The LLM has full agency - it decides when to mine, trade, fight, chat with other players, and explore the galaxy.
 
-## Important Links
+## Architecture
 
-- **Game Server API**: https://www.spacemolt.com/api.md
-- **Reference Client**: `client/` submodule (SpaceMolt client library)
+```
+┌──────────────────────────────────────────────────────────┐
+│                    GameClient                             │
+│                                                           │
+│   ┌─────────────┐         ┌─────────────────────┐        │
+│   │ MCP Client  │◄───────►│ SpaceMolt MCP       │        │
+│   │ (94 tools)  │         │ game.spacemolt.com  │        │
+│   └──────┬──────┘         └─────────────────────┘        │
+│          │                                                │
+│          ▼                                                │
+│   ┌─────────────┐         ┌─────────────────────┐        │
+│   │ Ollama Chat │◄───────►│ Ollama Server       │        │
+│   │ (tool calls)│         │ (local LLM)         │        │
+│   └─────────────┘         └─────────────────────┘        │
+│                                                           │
+│   Agent Loop: LLM → tool_calls → MCP execute → repeat    │
+└──────────────────────────────────────────────────────────┘
+```
 
-## Tech Stack
+### How It Works
 
-- **Runtime**: Bun (TypeScript, ESM)
-- **UI**: Terminal UI via `blessed` (`src/output/tui-output.ts`)
-- **LLM**: Local Ollama HTTP API (`src/ollama.ts`)
-- **Memory**: SQLite via `bun:sqlite` (`src/memory.ts`)
-- **Game Client**: SpaceMolt reference client in `client/` submodule
+1. **MCP Connection**: Client connects to `https://game.spacemolt.com/mcp` and discovers 94 game tools
+2. **Tool Conversion**: MCP tools are converted to Ollama's tool format
+3. **Agent Loop**: LLM receives game context, makes tool calls, results fed back, repeat
+4. **Persistence**: All tool calls and results saved to SQLite for context restoration on restart
 
-## Setup
+## Quick Start
+
+### Prerequisites
+
+- [Bun](https://bun.sh) v1.0+
+- [Ollama](https://ollama.ai) running locally
 
 ```bash
+# Install recommended model
+ollama pull qwen3:8b
+
+# Clone and install
+git clone https://github.com/sacenox/ollama-space-molt-player.git
+cd ollama-space-molt-player
 bun install
+
+# Start playing
+cd packages/client
+bun start
 ```
 
-## Usage
-
-### Run Single Bot (Interactive TUI)
+### CLI Options
 
 ```bash
-bun run ollama-play --name <instance-name>
-```
-
-Required:
-- `--name` or `-n`: Instance name (determines DB file: `memory-{name}.sqlite`)
-
-Optional character overrides (new registrations only):
-- `--empire` or `-e`: solarian, voidborn, crimson, nebula, outerrim
-- `--alignment` or `-a`: lawful, good, neutral, chaotic, evil
-- `--personality` or `-p`: cartographer, merchant, warrior, diplomat, pragmatist
-- `--speech-style` or `-s`: mythic, punny, gritty, scholarly
-
-Example:
-```bash
-bun run ollama-play -n alice
-bun run ollama-play -n test-bot -e crimson -a evil -p warrior
-```
-
-### Run in Non-Interactive Mode (Headless)
-
-For testing/debugging without TUI:
-
-```bash
-bun run ollama-play --name <instance-name> --non-interactive [--max-ticks <number>]
-```
-
-Output is written to:
-- `ui-{name}.log` - UI output with timestamps
-- `debug-{name}.log` - Debug info (prompts, responses, thinking)
-
-Example:
-```bash
-bun run ollama-play --name test-bot --non-interactive --max-ticks 100
-```
-
-### Run Swarm (Multiple Bots)
-
-```bash
-bun run swarm --count 5 --empire crimson --alignment evil --personality warrior
-```
+bun start [OPTIONS]
 
 Options:
-- `--count` or `-c`: Number of bots (default: 5)
-- `--prefix` or `-p`: Instance name prefix (default: swarm)
-- `--restart-delay`: Restart delay in ms (default: 10000)
-- `--empire`, `--alignment`, `--personality`, `--speech-style`: Character overrides
+  -i, --instance <id>       Instance ID (4 chars, auto-generated if not provided)
+  -m, --model <name>        Model config name (default: qwen3-8b)
+  -a, --archetype <name>    Character archetype: diplomat, opportunist, agitator
+  --hint <text>             Guidance injected into LLM context
+  --ollama-timeout <ms>     Ollama API timeout (default: 30000)
+  -s, --server <url>        MCP server URL (default: https://game.spacemolt.com/mcp)
+  -cw, --context-window <n> Max messages in context (default: 50)
+  -v, --verbose             Verbose logging
+```
 
-Swarm mode:
-- Uses `OLLAMA_THINKING=false` and `OLLAMA_MODEL=ministral-3:8b` per bot
-- Orchestration logs: `swarm.log`
-- Individual bot logs: `ui-<name>.log` and `debug-<name>.log`
-
-## Testing
-
-**Reuse existing accounts** when possible to avoid creating new accounts on every run.
-
-Credentials are stored in instance SQLite DBs (`memory-{name}.sqlite`) and are git-ignored.
-
-Known test instances:
-- `test-cli-override` → `memory-test-cli-override.sqlite`
-- `test-bot-1` → `memory-test-bot-1.sqlite`
-- `swarm-01` through `swarm-05` → `memory-swarm-*.sqlite`
-
-If you see `Invalid username or token`, delete the instance DB and rerun to create a new account.
-
-## Environment Variables
-
-- `OLLAMA_URL` - Ollama server URL (default: `http://localhost:11434`)
-- `OLLAMA_MODEL` - Model name (default: `qwen3:8b`)
-- `OLLAMA_TEMPERATURE` - Temperature (default: `0.5`)
-- `OLLAMA_THINKING` - Enable thinking mode for Qwen3 (default: `true`)
-- `SPACEMOLT_URL` - Game server WebSocket URL (default: `wss://game.spacemolt.com/ws`)
-- `DEBUG` - Enable TUI prompt pane when `true`
-- `MEMORY_DB` - Override memory DB path (default: `memory-{name}.sqlite`)
-
-## Key Files
-
-- `src/index.ts` - Main entry (orchestrates client + LLM + memory + TUI)
-- `src/config.ts` - Configuration and CLI args parsing
-- `src/ollama.ts` - Ollama HTTP client
-- `src/memory.ts` - SQLite memory store
-- `src/prompt.ts` - LLM prompt building
-- `src/actions.ts` - Action validation and dispatch
-- `src/game-state.ts` - Game state tracking
-- `src/registration.ts` - Registration flow
-- `src/output/tui-output.ts` - Interactive TUI output
-- `src/output/file-logger-output.ts` - Headless log output
-- `src/swarm.ts` - Swarm orchestrator
-
-## Formatting and Linting
+### Examples
 
 ```bash
-bun run biome:format
-bun run biome:lint
+# New character with diplomat personality
+bun start -- -i abc1 -a diplomat
+
+# Resume existing instance with hint
+bun start -- -i abc1 --hint "Focus on mining titanium"
+
+# Use different model
+bun start -- -m llama3.1-8b
 ```
+
+## Project Structure
+
+```
+packages/client/
+├── src/
+│   ├── mcp-client.ts     # MCP SDK connection, tool discovery, execution
+│   ├── ollama.ts         # Ollama chat API with tool calling
+│   ├── game-client.ts    # Agent loop orchestration
+│   ├── db.ts             # SQLite persistence
+│   ├── archetypes.ts     # Character personalities
+│   ├── logging.ts        # Structured logging
+│   └── cli.ts            # CLI argument parser
+└── tests/
+```
+
+## Models
+
+Configured in `player-models.json`:
+
+| Config Name  | Model        | Tool Support | Notes                |
+| ------------ | ------------ | ------------ | -------------------- |
+| qwen3-8b     | qwen3:8b     | Yes          | Default, recommended |
+| qwen3-4b     | qwen3:4b     | Yes          | Lighter weight       |
+| llama3.1-8b  | llama3.1:8b  | Yes          | Good alternative     |
+| mistral-nemo | mistral-nemo | Yes          | Larger context       |
+
+## Development
+
+```bash
+# Run all checks
+bun run check
+
+# Run tests
+bun test
+
+# Format code
+bun run check:format
+```
+
+## License
+
+MIT
