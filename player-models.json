@@ -1,105 +1,46 @@
 {
 	"models": {
-		"lfm-thinking": {
-			"displayName": "LFM 2.5 Thinking (731MB)",
-			"description": "Fastest model with built-in thinking. 128K context.",
+		"qwen3-4b": {
+			"displayName": "Qwen3 4B (2.5GB)",
+			"description": "Best balance of speed and quality. 32K context. Thinking supported.",
 			"ollama": {
-				"model": "lfm2.5-thinking:latest",
-				"options": {
-					"temperature": 1.2
-				}
-			},
-			"contextWindow": 128000,
-			"recommendedMessages": 10,
-			"recommended": true
-		},
-		"deepseek-r1": {
-			"displayName": "DeepSeek R1 7B (4.7GB)",
-			"description": "Advanced reasoning with thinking. 131K context.",
-			"ollama": {
-				"model": "deepseek-r1:7b",
-				"options": {
-					"temperature": 1.2
-				}
-			},
-			"contextWindow": 131072,
-			"recommendedMessages": 12,
-			"recommended": false
-		},
-		"mistral-7b": {
-			"displayName": "Mistral 7B (4.4GB)",
-			"description": "General-purpose model. 8K context.",
-			"ollama": {
-				"model": "mistral:7b",
-				"options": {
-					"temperature": 1.2
-				}
-			},
-			"contextWindow": 8192,
-			"recommended": false
-		},
-		"gemma2-9b": {
-			"displayName": "Gemma 2 9B (5.4GB)",
-			"description": "General-purpose model. 8K context.",
-			"ollama": {
-				"model": "gemma2:9b",
-				"options": {
-					"temperature": 1.2
-				}
-			},
-			"contextWindow": 8192,
-			"recommended": false
-		},
-		"qwen2.5-7b": {
-			"displayName": "Qwen2.5 7B (4.7GB)",
-			"description": "General-purpose model. 32K context.",
-			"ollama": {
-				"model": "qwen2.5:7b",
+				"model": "qwen3:4b",
 				"options": {
 					"temperature": 1.2
 				}
 			},
 			"contextWindow": 32768,
-			"recommended": false
+			"recommendedMessages": 20,
+			"recommended": true
 		},
-		"qwen3": {
-			"displayName": "Qwen3 8B (5.2GB)",
-			"description": "Strong reasoning + tools + thinking. 40K context.",
+		"deepseek-r1-1.5b": {
+			"displayName": "DeepSeek R1 1.5B (1.1GB)",
+			"description": "Fastest model with reasoning. 32K context.",
 			"ollama": {
-				"model": "qwen3:8b",
+				"model": "deepseek-r1:1.5b",
 				"options": {
-					"temperature": 1.2
+					"temperature": 1.2,
+					"thinking": true
 				}
 			},
-			"contextWindow": 40960,
+			"contextWindow": 32768,
 			"recommendedMessages": 15,
 			"recommended": false
 		},
-		"starcoder2-15b": {
-			"displayName": "StarCoder2 15B (9.1GB)",
-			"description": "Code-focused model. 32K context.",
+		"lfm-thinking": {
+			"displayName": "LFM 2.5 Thinking (731MB)",
+			"description": "Tiny model with thinking. 32K context.",
 			"ollama": {
-				"model": "starcoder2:15b",
+				"model": "lfm2.5-thinking:latest",
 				"options": {
-					"temperature": 1.2
+					"temperature": 1.2,
+					"thinking": true
 				}
 			},
 			"contextWindow": 32768,
-			"recommended": false
-		},
-		"ministral-3": {
-			"displayName": "Ministral 3 8B (6.0GB)",
-			"description": "Largest context window (262K). No thinking mode.",
-			"ollama": {
-				"model": "ministral-3:8b",
-				"options": {
-					"temperature": 1.2
-				}
-			},
-			"contextWindow": 262144,
-			"recommendedMessages": 20,
+			"recommendedMessages": 10,
 			"recommended": false
 		}
 	},
-	"default": "ministral-3"
+	"default": "lfm-thinking"
 }

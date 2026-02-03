@@ -62,7 +62,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		const config: ClientConfig = {
 			instanceId: getArg(cleanArgs, "--instance", "-i"),
 			hint: getArg(cleanArgs, "--hint"),
-			model: getArg(cleanArgs, "--model", "-m") || "lfm-thinking",
+			model: getArg(cleanArgs, "--model", "-m") || undefined,
 			verbose: cleanArgs.includes("--verbose"),
 			archetype: getArg(cleanArgs, "--archetype", "-a"),
 			tickRate: 20000,
@@ -111,7 +111,7 @@ COMMANDS:
 OPTIONS:
   -i, --instance <id>         Instance ID (4 chars). Auto-generated if not provided.
   --hint <text>               Hint message to inject into LLM context each tick
-  -m, --model <name>          Model configuration name (default: lfm-thinking, see MODELS below)
+  -m, --model <name>          Model configuration name (see MODELS below, default in player-models.json)
   --verbose                   Enable detailed logging (shows full message payloads)
   -a, --archetype <name>      Restrict LLM to single archetype choice (diplomat, opportunist, agitator)
   --ollama-timeout <ms>       Ollama API timeout in milliseconds (default: 30000)

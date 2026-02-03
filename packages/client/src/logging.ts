@@ -221,7 +221,8 @@ function getServerSummary(message: ServerMessage): string {
 		}
 		case "logged_in": {
 			const p = message.payload;
-			return `logged_in (player: ${p.player.username}, empire: ${p.player.empire}, location: ${p.system.name} > ${p.poi.name})`;
+			const poiName = p.poi?.name ?? "unknown";
+			return `logged_in (player: ${p.player.username}, empire: ${p.player.empire}, location: ${p.system.name} > ${poiName})`;
 		}
 		case "state_update": {
 			const p = message.payload;
@@ -310,7 +311,7 @@ function getServerDetails(message: ServerMessage, verbose: boolean): unknown {
 					},
 					location: {
 						system: p.system.name,
-						poi: p.poi.name,
+						poi: p.poi?.name ?? null,
 					},
 					ship: {
 						name: p.ship.name,
@@ -342,12 +343,14 @@ function getServerDetails(message: ServerMessage, verbose: boolean): unknown {
 					police_level: p.system.police_level,
 					connections: p.system.connections,
 				},
-				poi: {
-					name: p.poi.name,
-					type: p.poi.type,
-					base_id: p.poi.base_id,
-					resources: p.poi.resources,
-				},
+				poi: p.poi
+					? {
+							name: p.poi.name,
+							type: p.poi.type,
+							base_id: p.poi.base_id,
+							resources: p.poi.resources,
+						}
+					: null,
 				ship: {
 					name: p.ship.name,
 					class_id: p.ship.class_id,

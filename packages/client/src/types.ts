@@ -413,7 +413,7 @@ export interface StoredMessage {
 export interface ClientConfig {
 	instanceId?: string;
 	hint?: string;
-	model: string;
+	model?: string;
 	verbose?: boolean;
 	archetype?: string;
 	tickRate: number;

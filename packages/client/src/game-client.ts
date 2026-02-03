@@ -307,7 +307,7 @@ ${contextJson}
 Choose a creative username.
 Choose an empire from: ${empireList}
 
-CRITICAL: You must respond with ONLY valid JSON. No explanations, no markdown, just the JSON command.
+CRITICAL: You must respond with a SINGLE, VALID JSON OBJECT
 
 JSON Format:
 {"type": "register", "payload": {"username": "[your username]", "empire": "[your empire]"}}
@@ -414,7 +414,7 @@ Your JSON response:`;
 			
 ${contextJson}
 
-CRITICAL: You must respond with ONLY valid JSON. No explanations, no markdown, just the JSON command.
+CRITICAL: You must respond with a SINGLE, VALID JSON OBJECT
 
 JSON Format Rules:
 - Actions WITH arguments: {"type": "action_name", "payload": {"arg1": "value1", "arg2": "value2"}}
@@ -424,7 +424,7 @@ Examples:
 - {"type": "action_name_without_arguments"} ← Correct (no payload needed)
 - {"type": "action_name_with_arguments", "payload": {"target_poi": "sol_belt"}} ← Correct
 
-NEVER write "undefined" or "null" as payload value. If an action has no arguments, omit the payload field entirely.
+If an action has no arguments, omit the payload field entirely.
 
 Your JSON response:`;
 			const result = await this.ollama.generate(fullPrompt);

@@ -42,6 +42,8 @@ cd packages/client
 bun run start
 ```
 
+ollama logs: journalctl -u ollama -f -n 100
+
 **Important:** Set `OLLAMA_CONTEXT_LENGTH=16384` before starting the Ollama server. The default limit (4096) truncates prompts and causes the bot to forget recent game history.
 
 Model configurations are defined in `player-models.json` at the repo root.

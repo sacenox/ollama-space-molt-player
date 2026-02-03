@@ -39,7 +39,7 @@ describe("CLI Argument Parser", () => {
 	test("should parse start command with defaults", () => {
 		const result = parseArgs(["start"]);
 		expect(result.command).toBe("start");
-		expect(result.config?.model).toBe("lfm-thinking");
+		expect(result.config?.model).toBeUndefined();
 		expect(result.config?.contextWindowSize).toBeUndefined();
 	});
 

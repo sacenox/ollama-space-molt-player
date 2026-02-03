@@ -10,7 +10,7 @@ describe("JSON Extraction", () => {
 		const db = new GameDatabase(testInstanceId);
 		const config: ClientConfig = {
 			instanceId: testInstanceId,
-			model: "qwen3",
+			model: "qwen3-4b",
 			tickRate: 10000,
 			ollamaTimeout: 30000,
 		};
