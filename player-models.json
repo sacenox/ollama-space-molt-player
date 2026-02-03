@@ -4,7 +4,7 @@
 			"displayName": "LFM 2.5 Thinking (731MB)",
 			"description": "Fastest model with built-in thinking. 128K context.",
 			"ollama": {
-				"model": "lfm2.5-thinking",
+				"model": "lfm2.5-thinking:latest",
 				"options": {
 					"temperature": 1.2
 				}
@@ -26,6 +26,42 @@
 			"recommendedMessages": 12,
 			"recommended": false
 		},
+		"mistral-7b": {
+			"displayName": "Mistral 7B (4.4GB)",
+			"description": "General-purpose model. 8K context.",
+			"ollama": {
+				"model": "mistral:7b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 8192,
+			"recommended": false
+		},
+		"gemma2-9b": {
+			"displayName": "Gemma 2 9B (5.4GB)",
+			"description": "General-purpose model. 8K context.",
+			"ollama": {
+				"model": "gemma2:9b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 8192,
+			"recommended": false
+		},
+		"qwen2.5-7b": {
+			"displayName": "Qwen2.5 7B (4.7GB)",
+			"description": "General-purpose model. 32K context.",
+			"ollama": {
+				"model": "qwen2.5:7b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 32768,
+			"recommended": false
+		},
 		"qwen3": {
 			"displayName": "Qwen3 8B (5.2GB)",
 			"description": "Strong reasoning + tools + thinking. 40K context.",
@@ -37,6 +73,18 @@
 			},
 			"contextWindow": 40960,
 			"recommendedMessages": 15,
+			"recommended": false
+		},
+		"starcoder2-15b": {
+			"displayName": "StarCoder2 15B (9.1GB)",
+			"description": "Code-focused model. 32K context.",
+			"ollama": {
+				"model": "starcoder2:15b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 32768,
 			"recommended": false
 		},
 		"ministral-3": {
@@ -53,5 +101,5 @@
 			"recommended": false
 		}
 	},
-	"default": "lfm-thinking"
+	"default": "ministral-3"
 }
