@@ -1,0 +1,23 @@
+{
+	"name": "@spacemolt/tui",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./src/index.tsx",
+	"types": "./src/index.tsx",
+	"scripts": {
+		"dev": "bun run src/index.tsx",
+		"test:manual": "bun run tests/manual/index.tsx",
+		"check": "prettier --check . && tsc --noEmit"
+	},
+	"dependencies": {
+		"ink": "^5.1.0",
+		"react": "^18.3.1"
+	},
+	"devDependencies": {
+		"@types/node": "^25.2.0",
+		"@types/react": "^18.3.18",
+		"bun-types": "^1.3.8",
+		"prettier": "^3.4.2",
+		"typescript": "^5.7.3"
+	}
+}
