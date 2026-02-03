@@ -81,6 +81,7 @@ export class GameClient {
 	async start(): Promise<void> {
 		logClientEvent(this.getLogContext(), "Starting game client");
 
+		this.db.setLoggedOut(false);
 		await this.ws.connect();
 	}
 
@@ -179,6 +180,10 @@ export class GameClient {
 					error: "Registration prompt failed",
 					code: "REGISTRATION_PROMPT_ERROR",
 				});
+			});
+		} else {
+			logClientEvent(this.getLogContext(activeUsername.username), "Skipping auto-login", {
+				reason: "Player manually logged out",
 			});
 		}
 	}
