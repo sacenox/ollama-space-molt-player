@@ -33,6 +33,22 @@ describe("GameDatabase", () => {
 			const instance = db.getInstance();
 			expect(instance.hint).toBe("new hint");
 		});
+
+		test("should track logged_out state", () => {
+			expect(db.isLoggedOut()).toBe(false);
+
+			db.setLoggedOut(true);
+			expect(db.isLoggedOut()).toBe(true);
+
+			db.setLoggedOut(false);
+			expect(db.isLoggedOut()).toBe(false);
+		});
+
+		test("should persist logged_out in instance", () => {
+			db.setLoggedOut(true);
+			const instance = db.getInstance();
+			expect(instance.logged_out).toBe(1);
+		});
 	});
 
 	describe("Username Operations", () => {

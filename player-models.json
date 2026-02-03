@@ -10,7 +10,7 @@
 				}
 			},
 			"contextWindow": 32768,
-			"recommendedMessages": 20,
+			"recommendedMessages": 10,
 			"recommended": true
 		},
 		"deepseek-r1-1.5b": {
@@ -24,7 +24,7 @@
 				}
 			},
 			"contextWindow": 32768,
-			"recommendedMessages": 15,
+			"recommendedMessages": 10,
 			"recommended": false
 		},
 		"lfm-thinking": {
@@ -33,12 +33,11 @@
 			"ollama": {
 				"model": "lfm2.5-thinking:latest",
 				"options": {
-					"temperature": 1.2,
-					"thinking": true
+					"temperature": 1.2
 				}
 			},
 			"contextWindow": 32768,
-			"recommendedMessages": 10,
+			"recommendedMessages": 11,
 			"recommended": false
 		}
 	},

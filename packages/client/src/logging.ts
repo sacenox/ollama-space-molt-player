@@ -1,7 +1,18 @@
 import type { BaseCommand, ServerMessage } from "./types.ts";
 
 const SUMMARY_MAX_LENGTH = 140;
-const DETAIL_LINE_MAX_LENGTH = 200;
+const DETAIL_LINE_MAX_LENGTH = 300;
+
+const useColor = !process.env.NO_COLOR && process.env.TERM !== "dumb";
+
+const ANSI = {
+	reset: useColor ? "\x1b[0m" : "",
+	dim: useColor ? "\x1b[90m" : "",
+	cyan: useColor ? "\x1b[36m" : "",
+	green: useColor ? "\x1b[32m" : "",
+	yellow: useColor ? "\x1b[33m" : "",
+	red: useColor ? "\x1b[31m" : "",
+};
 
 export type LogContext = {
 	tick: number;
@@ -13,6 +24,12 @@ export type LogContext = {
 type LogDirection = "in" | "out";
 type LogLevel = "info" | "warn" | "error";
 
+function getColor(direction: LogDirection, level: LogLevel): string {
+	if (level === "error") return ANSI.red;
+	if (level === "warn") return ANSI.yellow;
+	return direction === "in" ? ANSI.cyan : ANSI.green;
+}
+
 export function log(
 	context: LogContext,
 	direction: LogDirection,
@@ -23,13 +40,15 @@ export function log(
 	const identifier = context.username || context.instanceId;
 	const tick = Number.isFinite(context.tick) ? context.tick : 0;
 	const arrow = direction === "in" ? "←" : "→";
-	const header = `${tick} | [${identifier}] | ${arrow} | ${summary}`;
+	const color = getColor(direction, level);
+	const header = `${color}${tick} | [${identifier}] | ${arrow} | ${summary}${ANSI.reset}`;
 	const lines = formatDetailLines(details, context.verbose);
 	const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
 	logger(header);
 	if (lines.length > 0) {
-		lines.forEach((line) => logger(`  ${line}`));
+		lines.forEach((line) => logger(`${ANSI.dim}  ${line}${ANSI.reset}`));
 	}
+	logger("\n• • • • • • • • • • • • • • • • • ⋆⁺₊⋆ ☾⋆⁺₊⋆ ☁︎⋆⁺₊⋆ ✧⋆⁺₊⋆ 『✙』\n");
 }
 
 export function logServerMessage(context: LogContext, message: ServerMessage): void {

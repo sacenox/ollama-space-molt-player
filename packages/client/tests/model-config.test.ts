@@ -16,9 +16,9 @@ describe("Model Configuration", () => {
 
 		expect(config.displayName).toBe("Qwen3 4B (2.5GB)");
 		expect(config.ollama.model).toBe("qwen3:4b");
-		expect(config.ollama.options).toEqual({ temperature: 1.2, thinking: true });
+		expect(config.ollama.options).toEqual({ temperature: 1.2 });
 		expect(config.contextWindow).toBe(32768);
-		expect(config.recommendedMessages).toBe(20);
+		expect(config.recommendedMessages).toBe(10);
 		expect(config.recommended).toBe(true);
 	});
 
@@ -29,7 +29,7 @@ describe("Model Configuration", () => {
 		expect(config.ollama.model).toBe("deepseek-r1:1.5b");
 		expect(config.ollama.options).toEqual({ temperature: 1.2, thinking: true });
 		expect(config.contextWindow).toBe(32768);
-		expect(config.recommendedMessages).toBe(15);
+		expect(config.recommendedMessages).toBe(10);
 	});
 
 	test("should load lfm-thinking config", () => {
@@ -37,9 +37,9 @@ describe("Model Configuration", () => {
 
 		expect(config.displayName).toBe("LFM 2.5 Thinking (731MB)");
 		expect(config.ollama.model).toBe("lfm2.5-thinking:latest");
-		expect(config.ollama.options).toEqual({ temperature: 1.2, thinking: true });
+		expect(config.ollama.options).toEqual({ temperature: 1.2 });
 		expect(config.contextWindow).toBe(32768);
-		expect(config.recommendedMessages).toBe(10);
+		expect(config.recommendedMessages).toBe(11);
 	});
 
 	test("should throw error for non-existent config", () => {

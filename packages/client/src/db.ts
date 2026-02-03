@@ -25,7 +25,8 @@ export class GameDatabase {
 		this.db.run(`
 			CREATE TABLE IF NOT EXISTS instances (
 				instance_id TEXT PRIMARY KEY,
-				hint TEXT
+				hint TEXT,
+				logged_out INTEGER NOT NULL DEFAULT 0
 			)
 		`);
 
@@ -114,12 +115,32 @@ export class GameDatabase {
 
 	getInstance(): Instance {
 		const row = this.db
-			.query<Instance, [string]>("SELECT instance_id, hint FROM instances WHERE instance_id = ?")
+			.query<
+				Instance,
+				[string]
+			>("SELECT instance_id, hint, logged_out FROM instances WHERE instance_id = ?")
 			.get(this.instanceId);
 		if (!row) {
 			throw new Error(`Instance ${this.instanceId} not found`);
 		}
 		return row;
+	}
+
+	isLoggedOut(): boolean {
+		const row = this.db
+			.query<
+				{ logged_out: number },
+				[string]
+			>("SELECT logged_out FROM instances WHERE instance_id = ?")
+			.get(this.instanceId);
+		return row?.logged_out === 1;
+	}
+
+	setLoggedOut(loggedOut: boolean): void {
+		this.db.run("UPDATE instances SET logged_out = ? WHERE instance_id = ?", [
+			loggedOut ? 1 : 0,
+			this.instanceId,
+		]);
 	}
 
 	updateHint(hint: string): void {

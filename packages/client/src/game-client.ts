@@ -12,7 +12,7 @@ import {
 } from "./logging.ts";
 import { loadModelConfig } from "./model-config.ts";
 import { OllamaClient } from "./ollama.ts";
-import { PLAYER_API_REFERENCE } from "./player-api-reference.ts";
+import { PLAYER_API_REFERENCE, VALID_COMMAND_TYPES } from "./player-api-reference.ts";
 import type {
 	BaseCommand,
 	ClientConfig,
@@ -138,6 +138,10 @@ export class GameClient {
 					this.db.saveMessage(this.currentTick, "server", message);
 					this.handleServerError(message as ErrorMessage);
 					break;
+				case "ok":
+					this.db.saveMessage(this.currentTick, "server", message);
+					this.handleOk(message as { type: "ok"; payload: { action: string } });
+					break;
 				default:
 					this.db.saveMessage(this.currentTick, "server", message);
 					break;
@@ -158,7 +162,9 @@ export class GameClient {
 		this.startWatchdog();
 
 		const activeUsername = this.db.getActiveUsername();
-		if (activeUsername) {
+		const wasLoggedOut = this.db.isLoggedOut();
+
+		if (activeUsername && !wasLoggedOut) {
 			logClientEvent(this.getLogContext(activeUsername.username), "Auto-login", {
 				username: activeUsername.username,
 			});
@@ -166,7 +172,7 @@ export class GameClient {
 				type: "login",
 				payload: { username: activeUsername.username, token: activeUsername.token },
 			});
-		} else {
+		} else if (!activeUsername) {
 			await this.promptForRegistration().catch((error) => {
 				logClientError(this.getLogContext(), "Registration prompt error", error);
 				this.db.saveMessage(this.currentTick, "client", {
@@ -361,7 +367,15 @@ Your JSON response:`;
 		}
 	}
 
-	private handleLoggedIn(_message: LoggedInMessage): void {}
+	private handleLoggedIn(_message: LoggedInMessage): void {
+		this.db.setLoggedOut(false);
+	}
+
+	private handleOk(message: { type: "ok"; payload: { action: string } }): void {
+		if (message.payload.action === "logout") {
+			this.db.setLoggedOut(true);
+		}
+	}
 
 	private handleServerError(message: ErrorMessage): void {
 		if (this.waitingForRegistration && this.registrationData) {
@@ -410,21 +424,24 @@ Your JSON response:`;
 
 		try {
 			const contextJson = JSON.stringify(context);
+			const validTypes = VALID_COMMAND_TYPES.join(", ");
 			const fullPrompt = `You are playing a multiplayer space game called SpaceMolt, 🦞 **The Crustacean Cosmos** 🦞. Be social, role play and stay in character. Game Context:
-			
+
 ${contextJson}
 
 CRITICAL: You must respond with a SINGLE, VALID JSON OBJECT
 
+VALID COMMAND TYPES (use ONLY these exact values for "type"):
+${validTypes}
+
 JSON Format Rules:
-- Actions WITH arguments: {"type": "action_name", "payload": {"arg1": "value1", "arg2": "value2"}}
-- Actions WITHOUT arguments: {"type": "action_name"}
+- Actions WITH arguments: {"type": "command_type", "payload": {"arg1": "value1"}}
+- Actions WITHOUT arguments: {"type": "command_type"}
 
 Examples:
-- {"type": "action_name_without_arguments"} ← Correct (no payload needed)
-- {"type": "action_name_with_arguments", "payload": {"target_poi": "sol_belt"}} ← Correct
-
-If an action has no arguments, omit the payload field entirely.
+- {"type": "get_status"}
+- {"type": "travel", "payload": {"target_poi": "sol_asteroid_belt"}}
+- {"type": "chat", "payload": {"channel": "local", "content": "Hello!"}}
 
 Your JSON response:`;
 			const result = await this.ollama.generate(fullPrompt);
@@ -468,10 +485,6 @@ Your JSON response:`;
 			this.db.saveMessage(this.currentTick, "client", command);
 		} catch (error) {
 			logClientError(this.getLogContext(activeUsername?.username), "LLM generation failed", error);
-			this.db.saveMessage(this.currentTick, "client", {
-				error: error instanceof Error ? error.message : "LLM generation failed",
-				code: "LLM_GENERATION_FAILED",
-			});
 		}
 	}
 
@@ -509,44 +522,41 @@ Your JSON response:`;
 
 	private buildLLMContext(prompt: string, hint: string | undefined): LLMContext {
 		const messages = this.db.getMessages(this.config.contextWindowSize || 20);
-		const history: HistoryEntry[] = messages.reverse().map((msg) => {
-			try {
-				return {
-					sender: msg.sender,
-					tick: msg.tick,
-					data: JSON.parse(msg.data),
-				};
-			} catch (error) {
-				logClientError(this.getLogContext(), "Failed to parse message", {
-					tick: msg.tick,
-					error: error instanceof Error ? error.message : String(error),
-				});
-				return {
-					sender: msg.sender,
-					tick: msg.tick,
-					data: { error: "Failed to parse message data", code: "PARSE_ERROR" },
-				};
-			}
-		});
+		const history: HistoryEntry[] = messages
+			.reverse()
+			.map((msg) => {
+				try {
+					const data = JSON.parse(msg.data);
+					if (data.error || data.code) {
+						return null;
+					}
+					return {
+						sender: msg.sender,
+						tick: msg.tick,
+						data,
+					};
+				} catch {
+					return null;
+				}
+			})
+			.filter((entry): entry is HistoryEntry => entry !== null);
 
 		const usernames = this.db.getUsernames();
 		const activeUsername = usernames.length > 0 ? usernames[0] : null;
-		const accounts = usernames.map((u) => ({
-			username: u.username,
-			token: u.token,
-			is_active: activeUsername ? u.username === activeUsername.username : false,
-		}));
 
-		return {
+		const context: LLMContext = {
 			character: prompt,
 			hint,
 			recent_game_messages: history,
 			api: PLAYER_API_REFERENCE,
-			accounts: {
-				list: accounts,
-				description: "List of registered usernames and login token",
-			},
 		};
+
+		if (activeUsername) {
+			context.logged_in_as = activeUsername.username;
+			context.note = `You are already logged in as "${activeUsername.username}". Do NOT use register or login commands.`;
+		}
+
+		return context;
 	}
 
 	private getLogContext(username?: string | null): LogContext {

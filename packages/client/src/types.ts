@@ -381,6 +381,7 @@ export type Empire = "solarian" | "voidborn" | "crimson" | "nebula" | "outerrim"
 export interface Instance {
 	instance_id: string;
 	hint: string | null;
+	logged_out: number;
 }
 
 export interface Username {
@@ -438,10 +439,8 @@ export interface LLMContext {
 	hint: string | undefined;
 	recent_game_messages: HistoryEntry[];
 	api: APIDefinition;
-	accounts: {
-		list: AccountInfo[];
-		description: string;
-	};
+	logged_in_as?: string;
+	note?: string;
 }
 
 export interface HistoryEntry {
