@@ -18,7 +18,7 @@ The current implementation has three core issues:
 - **Workspace structure** - Migrate to [Bun Workspaces](https://bun.com/docs/pm/workspaces)
 - **Package separation** - Split TUI and Client into separate packages with TUI imported by client
 - **Shared code across both packages** - Like types, test tools, or other future utilities, should be in a shared package in this workspace.
-- **Unified tooling** - Bun scripts in repo root (with/without TUI), shared Biome config
+- **Unified tooling** - Bun scripts in repo root (with/without TUI), shared Prettier config
 
 ### Database
 
@@ -88,13 +88,24 @@ The current implementation has three core issues:
   - If exists: auto-login and continue
   - **Note**: Auto-login only at boot; respect LLM logout decisions (no re-login)
 
-**2. Main Loop** (tick_time + 100ms buffer, configurable)
+**2. Main Loop** (Server tick-driven)
 
-Each tick:
+Client reacts to server `tick` messages instead of using a fixed interval timer. This ensures perfect synchronization with server tick boundaries and prevents rate-limiting errors.
+
+**Tick Synchronization:**
+
+- Server sends `tick` message every 10 seconds
+- Client receives tick message and immediately processes:
+  - Updates `currentTick` value
+  - Debounces duplicate tick messages (tracks `lastProcessedTick`)
+  - Resets watchdog timer (detects missing ticks after 20 seconds)
+  - Triggers LLM prompt and command generation
+
+**Each tick processing:**
 
 a. **Prompt LLM**
 
-- Check for hint updates in database.
+- Check for hint updates in database
 - Provide: game event history + combined API + prompt + hint
 - On client error: create client event in DB (avoid behavioral bias, do use words that can be interpreted as suggestions or directions), continue to next tick
 
@@ -103,7 +114,17 @@ b. **Forward Response**
 - Send LLM reply to server
 - On connection failure: create client message, continue to next tick
 
-c. **Continue to next tick**
+c. **Wait for next server tick**
+
+**Safety mechanisms:**
+
+- **Duplicate detection**: Ignores duplicate tick messages using `lastProcessedTick` tracking
+- **Processing lock**: Prevents parallel tick processing when LLM response time exceeds tick interval
+  - Uses `isProcessingTick` flag to ensure only one tick processes at a time
+  - Skips subsequent ticks if previous tick still processing (logs skip, no DB entry)
+  - Prevents rate limiting violations and resource waste from parallel LLM calls
+- **Watchdog timer**: Warns if no tick received within `tick_rate * 2` (20 seconds)
+- **Connection monitoring**: Logs watchdog timeouts as client errors in database
 
 ### API Extensions
 
@@ -122,9 +143,9 @@ c. **Continue to next tick**
 
 ```jsonc
 {
-  "prompt": "...", // Generated at registration
-  "hint": "...", // Optional injected message
-  // Standard commands from https://www.spacemolt.com/api.md
+	"prompt": "...", // Generated at registration
+	"hint": "...", // Optional injected message
+	// Standard commands from https://www.spacemolt.com/api.md
 }
 ```
 
@@ -138,41 +159,41 @@ c. **Continue to next tick**
 
 ```jsonc
 {
-  "prompt": "...",
-  "hint": "...",
-  "history": [
-    {
-      "sender": "server",
-      "tick": 42,
-      "data": {
-        "action": "move",
-        "result": "success",
-        "message": "You moved to sector Alpha-7",
-      },
-    },
-    {
-      "sender": "client",
-      "tick": 43,
-      "data": {
-        "error": "Connection interrupted",
-      },
-    },
-  ],
-  "api": {
-    "register": {
-      "args": ["username", "empire"],
-      "description": "Register a new character",
-    },
-    "chat": {
-      "args": ["message"],
-      "description": "Send a chat message",
-    },
-    "move": {
-      "args": ["sector"],
-      "description": "Move to a different sector",
-    },
-    // ... rest of server API from api.md
-  },
+	"prompt": "...",
+	"hint": "...",
+	"history": [
+		{
+			"sender": "server",
+			"tick": 42,
+			"data": {
+				"action": "move",
+				"result": "success",
+				"message": "You moved to sector Alpha-7",
+			},
+		},
+		{
+			"sender": "client",
+			"tick": 43,
+			"data": {
+				"error": "Connection interrupted",
+			},
+		},
+	],
+	"api": {
+		"register": {
+			"args": ["username", "empire"],
+			"description": "Register a new character",
+		},
+		"chat": {
+			"args": ["message"],
+			"description": "Send a chat message",
+		},
+		"move": {
+			"args": ["sector"],
+			"description": "Move to a different sector",
+		},
+		// ... rest of server API from api.md
+	},
 }
 ```
 
@@ -180,12 +201,12 @@ c. **Continue to next tick**
 
 ```jsonc
 {
-  "sender": "client",
-  "tick": 45,
-  "data": {
-    "error": "Network connection interrupted",
-    "code": "CONNECTION_FAILED",
-  },
+	"sender": "client",
+	"tick": 45,
+	"data": {
+		"error": "Network connection interrupted",
+		"code": "CONNECTION_FAILED",
+	},
 }
 ```
 
@@ -248,15 +269,15 @@ We should Ink as it's actively maintained. https://github.com/vadimdemedes/ink
 
 ## Milestones
 
-### 1. Clean Slate [ ]
+### 1. Clean Slate [ DONE ]
 
 - Switch to git branch `refactor-new-client-internals`
 - Wipe project: remove previous code, logs, memory files
 - Update agents file: reference this document, remove old implementation details
 - Migrate to Bun workspace structure
-- Configure Biome at workspace level
+- Configure Prettier at workspace level (using Prettier instead of Biome for formatting)
 - Create client package boilerplate:
-  - Bun `check` command (format with autofix, lint, tests)
+  - Bun `check` command (format with Prettier, lint with TypeScript, tests)
   - Placeholder README
 
 ### 2. Client Package Development [ ]
