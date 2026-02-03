@@ -7,10 +7,11 @@ import {
 	logToolCall,
 	logToolResult,
 	type LogContext,
-} from "./logging.ts";
+} from "@spacemolt/cui";
 import { loadModelConfig } from "./model-config.ts";
 import { MCPClient, type OllamaTool } from "./mcp-client.ts";
 import { OllamaClient, type ChatMessage, type ToolCall } from "./ollama.ts";
+import { summarizeToolResult } from "./response-summarizer.ts";
 import type { ClientConfig } from "./types.ts";
 
 interface ResolvedAccount {
@@ -61,7 +62,6 @@ export class GameClient {
 		this.tools = this.mcp.getOllamaTools();
 		logClientEvent(this.getLogContext(), "MCP connected", { tool_count: this.tools.length });
 
-
 		const username = this.db.getActiveUsername();
 
 		if (username) {
@@ -99,7 +99,7 @@ export class GameClient {
 		this.messages.push({
 			role: "user",
 			content: `You are resuming play as "${account.username}". 
-Use login(username="${account.username}", token="${account.token}") to authenticate, then continue playing.
+Use login(username="${account.username}", password="${account.token}") to authenticate, then continue playing.
 After login, check your status with get_status() and decide what to do next.`,
 		});
 	}
@@ -120,8 +120,10 @@ Create your character:
 2. Choose empire: "solarian" (only one available currently)
 3. Call register(username="YourName", empire="solarian")
 
+Note: Empire is your starting civilization - it's NOT a player faction. To use faction chat or faction features, you'll need to create or join a player faction later with create_faction() or faction_join().
+
 After registration succeeds, you'll receive a token. The system will save your credentials automatically.
-Then check your status with get_status() and begin playing!`;
+Then check your status with get_status() to see your starting location and ship, then begin playing!`;
 
 		const systemPrompt = this.buildSystemPrompt("", this.config.hint);
 		this.messages = [
@@ -146,9 +148,32 @@ Then check your status with get_status() and begin playing!`;
 		parts.push(`
 You have full agency. Make your own decisions. You are NOT an assistant - you are a player.
 
+CRITICAL - Track Your State:
+- After jump/travel: response shows "ticks: N" - you're IN TRANSIT until arrival
+- While in transit: CANNOT dock, undock, attack, mine, or modify ship - just wait
+- Check docked_at_base in get_status() - if set, you're docked; if empty, you're in space
+- Read error messages carefully - they tell you exactly what's wrong
+
+Action Prerequisites:
+- To jump between systems: must NOT be docked (call undock first)
+- To dock at a base: must be at a POI with a base_id (check with get_poi)
+- To attack: need a weapon module (starter ship has mining module, not weapon)
+- To install_mod/repair/refuel: must be docked at a base with those services
+- To use faction chat: must be in a player faction (empire is NOT a faction)
+
+Key Concepts:
+- Empire (solarian/voidborn/equilibrium): Your starting civilization - NOT a player faction
+- Faction: Player-created organization via create_faction() - required for faction chat/war
+- POI: Point of Interest in a system - some have bases (base_id), some don't
+
+Efficiency Tips:
+- Use limit: 5 for get_nearby/get_notifications unless you need more
+- Don't retry failed actions immediately - understand WHY it failed first
+- When in transit, use time productively: check notifications, read forums, plan ahead
+
 Key behaviors:
-- Use get_notifications() periodically to check for chat messages, combat alerts, trade offers
-- If rate limited, wait and try again - the error tells you how long
+- Use get_notifications() periodically to check for chat, combat alerts, trade offers
+- If rate limited, wait the time specified in the error
 - Be social! Chat with other players, form alliances, make enemies
 - Keep a captain's log of your adventures with captains_log_add()
 - Post on the forums to share discoveries and discuss strategy
@@ -248,7 +273,14 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 
 		const result = await this.mcp.callTool(name, args);
 
-		logToolResult(this.getLogContext(), name, result);
+		// Summarize tool result to reduce token count in LLM context
+		const summarized = summarizeToolResult(name, result.content, result.success);
+
+		// Log with comparison: show both raw server data and what LLM sees
+		logToolResult(this.getLogContext(), name, {
+			...result,
+			summarized,
+		});
 
 		this.db.saveMessage(Date.now(), "server", {
 			tool: name,
@@ -263,7 +295,7 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 		this.messages.push({
 			role: "tool",
 			name,
-			content: JSON.stringify(result.content),
+			content: JSON.stringify(summarized),
 		});
 	}
 
@@ -274,17 +306,17 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 		const username = args.username as string;
 		const empire = args.empire as string;
 
-		let token: string | undefined;
+		let password: string | undefined;
 		let playerId: string | undefined;
 
 		if (typeof response === "object" && response !== null) {
 			const resp = response as Record<string, unknown>;
-			token = resp.token as string | undefined;
+			password = resp.password as string | undefined;
 			playerId = resp.player_id as string | undefined;
 		}
 
-		if (!token || !playerId) {
-			logClientError(this.getLogContext(), "Registration response missing token or player_id", {
+		if (!password || !playerId) {
+			logClientError(this.getLogContext(), "Registration response missing password or player_id", {
 				response,
 			});
 			return;
@@ -292,7 +324,7 @@ You decide your goals: mining, trading, combat, exploration, faction politics - 
 
 		const characterPrompt = await this.generateCharacterPrompt(username, empire);
 
-		this.db.saveUsername(username, token, characterPrompt, playerId, Date.now());
+		this.db.saveUsername(username, password, characterPrompt, playerId, Date.now());
 
 		logClientEvent(this.getLogContext(username), "Account saved", { username, playerId });
 
@@ -367,10 +399,12 @@ Respond with ONLY the character prompt, no explanations.`,
 						],
 					});
 				} else if (data.tool && data.content !== undefined) {
+					// Summarize historical tool results to reduce context size
+					const summarized = summarizeToolResult(data.tool, data.content, data.success !== false);
 					this.messages.push({
 						role: "tool",
 						name: data.tool,
-						content: JSON.stringify(data.content),
+						content: JSON.stringify(summarized),
 					});
 				} else if (data.response) {
 					this.messages.push({

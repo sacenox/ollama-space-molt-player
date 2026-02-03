@@ -12,7 +12,8 @@
 		"strip-comments": "bun ../../scripts/strip-comments.ts"
 	},
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.25.3"
+		"@modelcontextprotocol/sdk": "^1.25.3",
+		"@spacemolt/cui": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/bun": "latest"

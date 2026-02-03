@@ -41,9 +41,9 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 	login: {
 		properties: {
 			username: { type: "string", description: "Your username" },
-			token: { type: "string", description: "Your 256-bit authentication token" },
+			password: { type: "string", description: "Your 256-bit hex password" },
 		},
-		required: ["username", "token"],
+		required: ["username", "password"],
 	},
 
 	// Navigation
@@ -242,7 +242,10 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 	},
 	faction_info: {
 		properties: {
-			faction_id: { type: "string", description: "Faction ID (optional, defaults to your faction)" },
+			faction_id: {
+				type: "string",
+				description: "Faction ID (optional, defaults to your faction)",
+			},
 		},
 		required: [],
 	},
@@ -519,7 +522,10 @@ export const TOOL_SCHEMA_PATCHES: Record<string, SchemaPatch> = {
 	get_notifications: {
 		properties: {
 			limit: { type: "number", description: "Max notifications (default 50)" },
-			types: { type: "array", description: "Filter by types: chat, combat, trade, faction, friend, forum, system" },
+			types: {
+				type: "array",
+				description: "Filter by types: chat, combat, trade, faction, friend, forum, system",
+			},
 			clear: { type: "boolean", description: "Clear notifications after reading (default true)" },
 		},
 		required: [],

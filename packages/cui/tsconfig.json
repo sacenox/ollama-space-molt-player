@@ -3,18 +3,26 @@
 		"target": "ESNext",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"allowImportingTsExtensions": true,
-		"noEmit": true,
+		"lib": [
+			"ESNext"
+		],
 		"strict": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
 		"types": [
 			"bun"
 		]
 	},
+	"include": [
+		"src/**/*",
+		"tests/**/*"
+	],
 	"exclude": [
-		"packages/tui",
-		"packages/cui"
+		"node_modules"
 	]
 }

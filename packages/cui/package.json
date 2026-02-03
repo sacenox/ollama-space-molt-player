@@ -1,0 +1,15 @@
+{
+	"name": "@spacemolt/cui",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"check": "prettier --check . && tsc --noEmit",
+		"check:format": "prettier --write .",
+		"check:test": "bun test"
+	},
+	"devDependencies": {
+		"@types/bun": "latest"
+	}
+}

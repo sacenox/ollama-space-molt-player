@@ -16,7 +16,15 @@
       "version": "0.2.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.25.3",
+        "@spacemolt/cui": "workspace:*",
       },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
+    "packages/cui": {
+      "name": "@spacemolt/cui",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
       },
@@ -49,6 +57,8 @@
     "@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.25.3", "", { "dependencies": { "@hono/node-server": "^1.19.9", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.0.1", "express-rate-limit": "^7.5.0", "jose": "^6.1.1", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.0" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-vsAMBMERybvYgKbg/l4L1rhS7VXV1c0CtyJg72vwxONVX0l4ZfKVAnZEWTQixJGTzKnELjQ59e4NbdFDALRiAQ=="],
 
     "@spacemolt/client": ["@spacemolt/client@workspace:packages/client"],
+
+    "@spacemolt/cui": ["@spacemolt/cui@workspace:packages/cui"],
 
     "@spacemolt/tui": ["@spacemolt/tui@workspace:packages/tui"],
 
