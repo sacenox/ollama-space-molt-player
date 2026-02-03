@@ -182,8 +182,12 @@ export class GameClient {
 				});
 			});
 		} else {
-			logClientEvent(this.getLogContext(activeUsername.username), "Skipping auto-login", {
-				reason: "Player manually logged out",
+			await this.promptForLogin(activeUsername.username, activeUsername.token).catch((error) => {
+				logClientError(this.getLogContext(activeUsername.username), "Login prompt error", error);
+				this.db.saveMessage(this.currentTick, "client", {
+					error: "Login prompt failed",
+					code: "LOGIN_PROMPT_ERROR",
+				});
 			});
 		}
 	}
@@ -368,6 +372,62 @@ Your JSON response:`;
 			this.db.saveMessage(this.currentTick, "client", {
 				error: error instanceof Error ? error.message : "Registration prompt failed",
 				code: "REGISTRATION_PROMPT_FAILED",
+			});
+		}
+	}
+
+	private async promptForLogin(username: string, token: string): Promise<void> {
+		const minimalContext = {
+			api: this.getApiSubset(["login"]),
+			available_account: username,
+			note: "You previously logged out. Login to continue playing.",
+		};
+
+		const contextJson = JSON.stringify(minimalContext);
+		const loginPrompt = `You are playing a multiplayer space game called SpaceMolt, 🦞 **The Crustacean Cosmos** 🦞. You need to login to continue playing.
+
+Game Context:
+${contextJson}
+
+CRITICAL: You must respond with a SINGLE, VALID JSON OBJECT
+
+JSON Format:
+{"type": "login", "payload": {"username": "${username}", "token": "${token}"}}
+
+Your JSON response:`;
+
+		try {
+			const result = await this.ollama.generate(loginPrompt);
+
+			if (result.thinking) {
+				logThinking(this.getLogContext(username), result.thinking);
+			}
+
+			let command: BaseCommand;
+			try {
+				command = JSON.parse(result.response);
+			} catch {
+				command = this.extractJSON(result.response);
+			}
+
+			if (command.type !== "login" || !command.payload) {
+				throw new Error("Invalid login command: missing type or payload");
+			}
+
+			const payload = command.payload as { username: string; token: string };
+			if (!payload.username || !payload.token) {
+				throw new Error("Invalid login payload: missing username or token");
+			}
+
+			logClientCommand(this.getLogContext(payload.username), command);
+
+			this.ws.send(command);
+			this.db.saveMessage(this.currentTick, "client", command);
+		} catch (error) {
+			logClientError(this.getLogContext(username), "Login prompt failed", error);
+			this.db.saveMessage(this.currentTick, "client", {
+				error: error instanceof Error ? error.message : "Login prompt failed",
+				code: "LOGIN_PROMPT_FAILED",
 			});
 		}
 	}
