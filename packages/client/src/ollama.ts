@@ -1,8 +1,7 @@
 export interface OllamaConfig {
 	baseUrl: string;
 	model: string;
-	temperature: number;
-	thinking: boolean;
+	options: Record<string, unknown>;
 	timeout: number;
 }
 
@@ -10,48 +9,38 @@ export interface OllamaRequest {
 	model: string;
 	prompt: string;
 	stream: boolean;
-	options: {
-		temperature: number;
-		num_predict?: number;
-		thinking?: boolean;
-	};
+	options: Record<string, unknown>;
 }
 
 export interface OllamaResponse {
 	model: string;
 	created_at: string;
 	response: string;
+	thinking?: string;
 	done: boolean;
+}
+
+export interface GenerateResult {
+	response: string;
+	thinking?: string;
 }
 
 export class OllamaClient {
 	private config: OllamaConfig;
 
-	constructor(config: Partial<OllamaConfig> = {}) {
-		this.config = {
-			baseUrl: config.baseUrl || "http://localhost:11434",
-			model: config.model || "qwen3:8b",
-			temperature: config.temperature || 1.2,
-			thinking: config.thinking ?? false,
-			timeout: config.timeout || 8000,
-		};
+	constructor(config: OllamaConfig) {
+		this.config = config;
 	}
 
-	async generate(prompt: string): Promise<string> {
+	async generate(prompt: string): Promise<GenerateResult> {
 		const url = `${this.config.baseUrl}/api/generate`;
 
 		const request: OllamaRequest = {
 			model: this.config.model,
 			prompt,
 			stream: false,
-			options: {
-				temperature: this.config.temperature,
-			},
+			options: this.config.options,
 		};
-
-		if (this.config.thinking) {
-			request.options.thinking = true;
-		}
 
 		try {
 			const response = await fetch(url, {
@@ -73,7 +62,10 @@ export class OllamaClient {
 				throw new Error("Ollama response missing 'response' field");
 			}
 
-			return data.response.trim();
+			return {
+				response: data.response.trim(),
+				thinking: data.thinking?.trim(),
+			};
 		} catch (error) {
 			if (error instanceof Error) {
 				if (error.name === "AbortError") {

@@ -39,8 +39,7 @@ describe("CLI Argument Parser", () => {
 	test("should parse start command with defaults", () => {
 		const result = parseArgs(["start"]);
 		expect(result.command).toBe("start");
-		expect(result.config?.model).toBe("qwen3:8b");
-		expect(result.config?.temperature).toBe(1.2);
+		expect(result.config?.model).toBe("lfm-thinking");
 	});
 
 	test("should parse start with instance ID", () => {
@@ -69,26 +68,6 @@ describe("CLI Argument Parser", () => {
 		expect(result.config?.model).toBe("custom");
 	});
 
-	test("should parse start with temperature", () => {
-		const result = parseArgs(["start", "--temperature", "0.8"]);
-		expect(result.config?.temperature).toBe(0.8);
-	});
-
-	test("should parse start with short temperature flag", () => {
-		const result = parseArgs(["start", "-t", "1.5"]);
-		expect(result.config?.temperature).toBe(1.5);
-	});
-
-	test("should parse start with thinking", () => {
-		const result = parseArgs(["start", "--thinking"]);
-		expect(result.config?.thinking).toBe(true);
-	});
-
-	test("should default thinking to false when not specified", () => {
-		const result = parseArgs(["start"]);
-		expect(result.config?.thinking).toBe(false);
-	});
-
 	test("should parse start with archetype", () => {
 		const result = parseArgs(["start", "--archetype", "diplomat"]);
 		expect(result.config?.archetype).toBe("diplomat");
@@ -105,9 +84,7 @@ describe("CLI Argument Parser", () => {
 			"-i",
 			"xyz9",
 			"-m",
-			"qwen2:7b",
-			"-t",
-			"0.9",
+			"qwen2.5",
 			"-a",
 			"opportunist",
 			"--hint",
@@ -115,8 +92,7 @@ describe("CLI Argument Parser", () => {
 		]);
 
 		expect(result.config?.instanceId).toBe("xyz9");
-		expect(result.config?.model).toBe("qwen2:7b");
-		expect(result.config?.temperature).toBe(0.9);
+		expect(result.config?.model).toBe("qwen2.5");
 		expect(result.config?.archetype).toBe("opportunist");
 		expect(result.config?.hint).toBe("explore");
 	});

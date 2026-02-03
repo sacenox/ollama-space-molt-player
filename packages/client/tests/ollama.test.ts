@@ -11,23 +11,26 @@ describe("OllamaClient", () => {
 		mockServer = null;
 	});
 
-	test("should create client with default config", () => {
-		client = new OllamaClient();
+	test("should create client with config", () => {
+		client = new OllamaClient({
+			baseUrl: "http://localhost:11434",
+			model: "qwen3:8b",
+			options: { temperature: 1.2 },
+			timeout: 8000,
+		});
 		const config = client.getConfig();
 
 		expect(config.baseUrl).toBe("http://localhost:11434");
 		expect(config.model).toBe("qwen3:8b");
-		expect(config.temperature).toBe(1.2);
-		expect(config.thinking).toBe(false);
+		expect(config.options).toEqual({ temperature: 1.2 });
 		expect(config.timeout).toBe(8000);
 	});
 
-	test("should create client with custom config", () => {
+	test("should create client with custom options", () => {
 		client = new OllamaClient({
 			baseUrl: "http://custom:9999",
 			model: "custom-model",
-			temperature: 0.5,
-			thinking: true,
+			options: { temperature: 0.5, thinking: true },
 			timeout: 5000,
 		});
 
@@ -35,18 +38,22 @@ describe("OllamaClient", () => {
 
 		expect(config.baseUrl).toBe("http://custom:9999");
 		expect(config.model).toBe("custom-model");
-		expect(config.temperature).toBe(0.5);
-		expect(config.thinking).toBe(true);
+		expect(config.options).toEqual({ temperature: 0.5, thinking: true });
 		expect(config.timeout).toBe(5000);
 	});
 
 	test("should update config", () => {
-		client = new OllamaClient();
-		client.updateConfig({ model: "new-model", temperature: 0.8 });
+		client = new OllamaClient({
+			baseUrl: "http://localhost:11434",
+			model: "old-model",
+			options: { temperature: 1.2 },
+			timeout: 8000,
+		});
+		client.updateConfig({ model: "new-model", options: { temperature: 0.8 } });
 
 		const config = client.getConfig();
 		expect(config.model).toBe("new-model");
-		expect(config.temperature).toBe(0.8);
+		expect(config.options).toEqual({ temperature: 0.8 });
 	});
 
 	test("should make successful generation request", async () => {
@@ -65,10 +72,14 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
+			timeout: 8000,
 		});
 
-		const response = await client.generate("test prompt");
-		expect(response).toBe("test response");
+		const result = await client.generate("test prompt");
+		expect(result.response).toBe("test response");
+		expect(result.thinking).toBeUndefined();
 	});
 
 	test("should trim response", async () => {
@@ -86,10 +97,13 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
+			timeout: 8000,
 		});
 
-		const response = await client.generate("test");
-		expect(response).toBe("trimmed");
+		const result = await client.generate("test");
+		expect(result.response).toBe("trimmed");
 	});
 
 	test("should handle timeout", async () => {
@@ -103,6 +117,8 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
 			timeout: 100,
 		});
 
@@ -119,6 +135,9 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
+			timeout: 8000,
 		});
 
 		await expect(client.generate("test")).rejects.toThrow(/status 500/);
@@ -137,13 +156,16 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: {},
+			timeout: 8000,
 		});
 
 		await expect(client.generate("test")).rejects.toThrow(/missing 'response' field/);
 	});
 
-	test("should include thinking when enabled", async () => {
-		let capturedRequest: { options: { thinking?: boolean } } | null = null;
+	test("should pass options with thinking enabled", async () => {
+		let capturedRequest: { options: Record<string, unknown> } | null = null;
 
 		mockServer = Bun.serve({
 			port: 0,
@@ -160,17 +182,20 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
-			thinking: true,
+			model: "test-model",
+			options: { thinking: true, temperature: 1.2 },
+			timeout: 8000,
 		});
 
 		await client.generate("test");
 
 		expect(capturedRequest).not.toBeNull();
 		expect(capturedRequest!.options.thinking).toBe(true);
+		expect(capturedRequest!.options.temperature).toBe(1.2);
 	});
 
-	test("should not include thinking when false", async () => {
-		let capturedRequest: { options: { thinking?: boolean } } | null = null;
+	test("should pass options without thinking", async () => {
+		let capturedRequest: { options: Record<string, unknown> } | null = null;
 
 		mockServer = Bun.serve({
 			port: 0,
@@ -187,11 +212,41 @@ describe("OllamaClient", () => {
 
 		client = new OllamaClient({
 			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: { temperature: 0.8 },
+			timeout: 8000,
 		});
 
 		await client.generate("test");
 
 		expect(capturedRequest).not.toBeNull();
 		expect(capturedRequest!.options.thinking).toBeUndefined();
+		expect(capturedRequest!.options.temperature).toBe(0.8);
+	});
+
+	test("should return thinking content when provided", async () => {
+		mockServer = Bun.serve({
+			port: 0,
+			fetch: async () => {
+				return Response.json({
+					model: "test",
+					created_at: new Date().toISOString(),
+					response: "final answer",
+					thinking: "reasoning process here",
+					done: true,
+				});
+			},
+		});
+
+		client = new OllamaClient({
+			baseUrl: `http://localhost:${mockServer.port}`,
+			model: "test-model",
+			options: { thinking: true },
+			timeout: 8000,
+		});
+
+		const result = await client.generate("test");
+		expect(result.response).toBe("final answer");
+		expect(result.thinking).toBe("reasoning process here");
 	});
 });

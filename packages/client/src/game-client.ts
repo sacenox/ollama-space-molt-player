@@ -2,6 +2,7 @@ import { GAME_API } from "./api-definition.ts";
 import { getArchetypeListText } from "./archetypes.ts";
 import type { GameDatabase } from "./db.ts";
 import { formatPayload, logServerMessage } from "./logging.ts";
+import { loadModelConfig } from "./model-config.ts";
 import { OllamaClient } from "./ollama.ts";
 import { PLAYER_API_REFERENCE } from "./player-api-reference.ts";
 import type {
@@ -38,12 +39,18 @@ export class GameClient {
 		this.config = config;
 		this.tickRate = config.tickRate;
 
+		const modelConfig = loadModelConfig(config.model);
+
 		this.ollama = new OllamaClient({
-			model: config.model,
-			temperature: config.temperature,
-			thinking: config.thinking,
+			baseUrl: "http://localhost:11434",
+			model: modelConfig.ollama.model,
+			options: modelConfig.ollama.options,
 			timeout: config.ollamaTimeout,
 		});
+
+		console.log(
+			`[${config.instanceId}] Using model: ${config.model} (${modelConfig.ollama.model})`,
+		);
 
 		this.ws = new GameWebSocketClient({
 			url: config.serverUrl || "wss://game.spacemolt.com/ws",
@@ -207,12 +214,16 @@ Generate a concise character prompt (1-2 sentences) that captures this character
 Character prompt:`;
 
 		try {
-			const characterPrompt = await this.ollama.generate(promptGeneration);
+			const result = await this.ollama.generate(promptGeneration);
+
+			if (result.thinking) {
+				console.log(`[${this.config.instanceId}] Thinking: ${result.thinking}`);
+			}
 
 			this.db.saveUsername(
 				this.registrationData.username,
 				message.payload.token,
-				characterPrompt,
+				result.response,
 				message.payload.player_id,
 				this.currentTick,
 			);
@@ -289,16 +300,21 @@ Examples:
 NEVER write "undefined" or "null" as payload value. If an action has no arguments, omit the payload field entirely.
 
 Your JSON response:`;
-			const response = await this.ollama.generate(fullPrompt);
+			const result = await this.ollama.generate(fullPrompt);
+
+			if (result.thinking) {
+				console.log(`[${this.config.instanceId}] Thinking:\n${result.thinking}`);
+			}
 
 			let command: BaseCommand;
 			try {
-				command = JSON.parse(response);
+				command = JSON.parse(result.response);
 			} catch {
-				command = this.extractJSON(response);
+				command = this.extractJSON(result.response);
 			}
 
 			if (!command.type || typeof command.type !== "string") {
+				console.error(`[${this.config.instanceId}] LLM response: ${result.response}`);
 				throw new Error("Invalid command: missing or invalid 'type' field");
 			}
 
@@ -376,7 +392,7 @@ Your JSON response:`;
 	}
 
 	private buildLLMContext(prompt: string, hint: string | undefined): LLMContext {
-		const messages = this.db.getMessages(5);
+		const messages = this.db.getMessages(this.config.contextWindowSize || 20);
 		const history: HistoryEntry[] = messages.reverse().map((msg) => {
 			try {
 				return {

@@ -1,5 +1,6 @@
 import { listArchetypes } from "./archetypes.ts";
 import { listInstances } from "./db.ts";
+import { getModelListText } from "./model-config.ts";
 import type { ClientConfig } from "./types.ts";
 
 export interface ParsedArgs {
@@ -60,14 +61,13 @@ export function parseArgs(args: string[]): ParsedArgs {
 		const config: ClientConfig = {
 			instanceId: getArg(cleanArgs, "--instance", "-i"),
 			hint: getArg(cleanArgs, "--hint"),
-			model: getArg(cleanArgs, "--model", "-m") || "qwen3:8b",
-			temperature: Number.parseFloat(getArg(cleanArgs, "--temperature", "-t") || "1.2"),
-			thinking: cleanArgs.includes("--thinking"),
+			model: getArg(cleanArgs, "--model", "-m") || "lfm-thinking",
 			verbose: cleanArgs.includes("--verbose"),
 			archetype: getArg(cleanArgs, "--archetype", "-a"),
 			tickRate: 20000,
 			ollamaTimeout: Number.parseInt(getArg(cleanArgs, "--ollama-timeout") || "30000"),
 			serverUrl: getArg(cleanArgs, "--server", "-s"),
+			contextWindowSize: Number.parseInt(getArg(cleanArgs, "--context-window", "-cw") || "20"),
 		};
 
 		return {
@@ -110,31 +110,38 @@ COMMANDS:
 OPTIONS:
   -i, --instance <id>         Instance ID (4 chars). Auto-generated if not provided.
   --hint <text>               Hint message to inject into LLM context each tick
-  -m, --model <name>          Ollama model name (default: qwen3:8b)
-  -t, --temperature <float>   LLM temperature (default: 1.2)
-  --thinking                  Enable Ollama thinking mode (verbose reasoning)
+  -m, --model <name>          Model configuration name (default: lfm-thinking, see MODELS below)
   --verbose                   Enable detailed logging (shows full message payloads)
   -a, --archetype <name>      Restrict LLM to single archetype choice (diplomat, opportunist, agitator)
   --ollama-timeout <ms>       Ollama API timeout in milliseconds (default: 30000)
   -s, --server <url>          WebSocket server URL (default: wss://game.spacemolt.com/ws)
+  -cw, --context-window <n>   Number of recent messages to include in LLM context (default: 20)
 
 ARCHETYPES:
 ${listArchetypes()
 	.map((a) => `  ${a.name.padEnd(15)} ${a.description}`)
 	.join("\n")}
 
+MODELS:
+${getModelListText()}
+
+  For full model details, see player-models.json at repo root.
+
 EXAMPLES:
-  # Start new game with auto-generated instance ID
+  # Start new game with default model (lfm-thinking)
   bun start
 
   # Start with specific instance ID and archetype
   bun start --instance abc1 --archetype diplomat
 
-  # Start with thinking mode enabled
-  bun start --instance abc1 --archetype diplomat --thinking
+  # Use a different model configuration
+  bun start --model qwen3 --archetype diplomat
+
+  # Use DeepSeek for large context tasks
+  bun start --model deepseek-r1 --archetype agitator
 
   # Start with hint and custom model
-  bun start --hint "Focus on trading" --model llama3:8b
+  bun start --hint "Focus on trading" --model qwen2.5
 
   # Update hint for existing instance
   bun start update-hint --instance abc1 --hint "New strategy: explore"

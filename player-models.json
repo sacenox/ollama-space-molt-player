@@ -1,0 +1,54 @@
+{
+	"models": {
+		"lfm-thinking": {
+			"displayName": "LFM 2.5 Thinking (731MB)",
+			"description": "Fast reasoning model with built-in thinking. Recommended for 12GB VRAM.",
+			"ollama": {
+				"model": "lfm2.5-thinking",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 4096,
+			"recommended": true
+		},
+		"qwen3": {
+			"displayName": "Qwen3 8B (5.2GB)",
+			"description": "General-purpose model with strong reasoning. Requires thinking flag.",
+			"ollama": {
+				"model": "qwen3:8b",
+				"options": {
+					"temperature": 1.2,
+					"thinking": true
+				}
+			},
+			"contextWindow": 32768,
+			"recommended": false
+		},
+		"qwen2.5": {
+			"displayName": "Qwen2.5 7B (4.7GB)",
+			"description": "Balanced model with large context window.",
+			"ollama": {
+				"model": "qwen2.5:7b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 32768,
+			"recommended": false
+		},
+		"deepseek-r1": {
+			"displayName": "DeepSeek R1 7B (~5GB)",
+			"description": "Advanced reasoning model with 128K context. Requires download.",
+			"ollama": {
+				"model": "deepseek-r1:7b",
+				"options": {
+					"temperature": 1.2
+				}
+			},
+			"contextWindow": 131072,
+			"recommended": false
+		}
+	},
+	"default": "lfm-thinking"
+}

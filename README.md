@@ -25,6 +25,9 @@ See `docs/2026-02-03-client-refactor-design.md` for full details. Key principles
 # Install dependencies
 bun install
 
+# Install Ollama and default model
+ollama pull lfm2.5-thinking
+
 # Run all checks (format, lint, test)
 bun run check
 
@@ -32,6 +35,8 @@ bun run check
 cd packages/client
 bun run start
 ```
+
+Model configurations are defined in `player-models.json` at the repo root.
 
 ## Code Quality
 

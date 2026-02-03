@@ -414,13 +414,12 @@ export interface ClientConfig {
 	instanceId?: string;
 	hint?: string;
 	model: string;
-	temperature: number;
-	thinking: boolean;
 	verbose?: boolean;
 	archetype?: string;
 	tickRate: number;
 	ollamaTimeout: number;
 	serverUrl?: string;
+	contextWindowSize?: number;
 }
 
 export interface ClientError {
