@@ -58,7 +58,11 @@ export class GameClient {
 
 		this.ws = new GameWebSocketClient({
 			url: config.serverUrl || "wss://game.spacemolt.com/ws",
-			onMessage: (msg) => this.handleServerMessage(msg),
+			onMessage: (msg) => {
+				this.handleServerMessage(msg).catch((error) => {
+					console.error(`[${this.config.instanceId}] Unhandled error in message handler:`, error);
+				});
+			},
 			onConnect: () => this.handleConnect(),
 			onDisconnect: () => this.handleDisconnect(),
 			onError: (err) => this.handleError(err),
@@ -109,35 +113,43 @@ export class GameClient {
 	}
 
 	private async handleServerMessage(message: ServerMessage): Promise<void> {
-		logServerMessage(this.config.instanceId || "default", message, this.config.verbose || false);
+		try {
+			logServerMessage(this.config.instanceId || "default", message, this.config.verbose || false);
 
-		switch (message.type) {
-			case "welcome":
-				this.db.saveMessage(this.currentTick, "server", message);
-				await this.handleWelcome(message as WelcomeMessage);
-				break;
-			case "registered":
-				this.db.saveMessage(this.currentTick, "server", message);
-				await this.handleRegistered(message as RegisteredMessage);
-				break;
-			case "logged_in":
-				this.db.saveMessage(this.currentTick, "server", message);
-				this.handleLoggedIn(message as LoggedInMessage);
-				break;
-			case "tick":
-			case "state_update":
-				const shouldProcess = await this.handleTick(message as { payload: { tick: number } });
-				if (shouldProcess) {
+			switch (message.type) {
+				case "welcome":
 					this.db.saveMessage(this.currentTick, "server", message);
-				}
-				break;
-			case "error":
-				this.db.saveMessage(this.currentTick, "server", message);
-				this.handleServerError(message as ErrorMessage);
-				break;
-			default:
-				this.db.saveMessage(this.currentTick, "server", message);
-				break;
+					await this.handleWelcome(message as WelcomeMessage);
+					break;
+				case "registered":
+					this.db.saveMessage(this.currentTick, "server", message);
+					await this.handleRegistered(message as RegisteredMessage);
+					break;
+				case "logged_in":
+					this.db.saveMessage(this.currentTick, "server", message);
+					this.handleLoggedIn(message as LoggedInMessage);
+					break;
+				case "tick":
+				case "state_update":
+					const shouldProcess = await this.handleTick(message as { payload: { tick: number } });
+					if (shouldProcess) {
+						this.db.saveMessage(this.currentTick, "server", message);
+					}
+					break;
+				case "error":
+					this.db.saveMessage(this.currentTick, "server", message);
+					this.handleServerError(message as ErrorMessage);
+					break;
+				default:
+					this.db.saveMessage(this.currentTick, "server", message);
+					break;
+			}
+		} catch (error) {
+			console.error(`[${this.config.instanceId}] Error handling ${message.type} message:`, error);
+			this.db.saveMessage(this.currentTick, "client", {
+				error: `Failed to handle ${message.type} message: ${error instanceof Error ? error.message : String(error)}`,
+				code: "MESSAGE_HANDLER_ERROR",
+			});
 		}
 	}
 
