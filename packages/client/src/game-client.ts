@@ -159,11 +159,11 @@ export class GameClient {
 					payload: { username: activeUsername.username, token: activeUsername.token },
 				});
 			} else {
-				await this.processTick().catch((error) => {
-					console.error(`[${this.config.instanceId}] Initial tick processing error:`, error);
+				await this.promptForRegistration().catch((error) => {
+					console.error(`[${this.config.instanceId}] Registration prompt error:`, error);
 					this.db.saveMessage(this.currentTick, "client", {
-						error: "Initial tick processing failed",
-						code: "TICK_PROCESSING_ERROR",
+						error: "Registration prompt failed",
+						code: "REGISTRATION_PROMPT_ERROR",
 					});
 				});
 			}
@@ -218,9 +218,29 @@ export class GameClient {
 
 		console.log(`[${this.config.instanceId}] Registration successful`);
 
+		const characterPrompt = await this.generateCharacterPrompt(
+			this.registrationData.username,
+			this.registrationData.empire,
+		);
+
+		this.db.saveUsername(
+			this.registrationData.username,
+			message.payload.token,
+			characterPrompt,
+			message.payload.player_id,
+			this.currentTick,
+		);
+
+		console.log(`[${this.config.instanceId}] Character prompt generated and saved`);
+
+		this.waitingForRegistration = false;
+		this.registrationData = null;
+	}
+
+	private async generateCharacterPrompt(username: string, empire: string): Promise<string> {
 		const archetypeList = getArchetypeListText(this.config.archetype);
 
-		const promptGeneration = `You are creating a character for a sci-fi themed online multiplayer game called SpaceMolt. The character's name is "${this.registrationData.username}" and they belong to the "${this.registrationData.empire}" empire.
+		const promptGeneration = `You are creating a character for a sci-fi themed online multiplayer game called SpaceMolt. The character's name is "${username}" and they belong to the "${empire}" empire.
 
 Choose a personality archetype from this list:
 ${archetypeList}
@@ -236,37 +256,97 @@ Character prompt:`;
 				console.log(`[${this.config.instanceId}] Thinking: ${result.thinking}`);
 			}
 
-			this.db.saveUsername(
-				this.registrationData.username,
-				message.payload.token,
-				result.response,
-				message.payload.player_id,
-				this.currentTick,
-			);
-
-			console.log(`[${this.config.instanceId}] Character prompt generated and saved`);
+			return result.response;
 		} catch (error) {
 			console.error(`[${this.config.instanceId}] Failed to generate prompt:`, error);
-
-			this.db.saveUsername(
-				this.registrationData.username,
-				message.payload.token,
-				`You are ${this.registrationData.username}, a ${this.registrationData.empire} player in SpaceMolt.`,
-				message.payload.player_id,
-				this.currentTick,
-			);
+			return `You are ${username}, a ${empire} player in SpaceMolt.`;
 		}
+	}
 
-		this.waitingForRegistration = false;
-		this.registrationData = null;
+	private async promptForRegistration(): Promise<void> {
+		const registerApi = {
+			register: PLAYER_API_REFERENCE.register,
+		};
+
+		const minimalContext = {
+			api: registerApi,
+			note: "You must register before you can play. Choose a creative username prefix - the system will add a unique suffix.",
+		};
+
+		const contextJson = JSON.stringify(minimalContext);
+		const registrationPrompt = `You are playing a multiplayer space game called SpaceMolt. You need to register a username to play.
+
+Game Context:
+${contextJson}
+
+Choose a creative username prefix (the system will add a unique suffix for you).
+Choose an empire from: solarian, voidborn, crimson, nebula, outerrim
+
+CRITICAL: You must respond with ONLY valid JSON. No explanations, no markdown, just the JSON command.
+
+JSON Format:
+{"type": "register", "payload": {"username": "YourChosenPrefix", "empire": "solarian"}}
+
+Your JSON response:`;
+
+		try {
+			const result = await this.ollama.generate(registrationPrompt);
+
+			if (result.thinking) {
+				console.log(`[${this.config.instanceId}] Thinking:\n${result.thinking}`);
+			}
+
+			let command: BaseCommand;
+			try {
+				command = JSON.parse(result.response);
+			} catch {
+				command = this.extractJSON(result.response);
+			}
+
+			if (command.type !== "register" || !command.payload) {
+				throw new Error("Invalid registration command: missing type or payload");
+			}
+
+			const payload = command.payload as { username: string; empire: string };
+			if (!payload.username || !payload.empire) {
+				throw new Error("Invalid registration payload: missing username or empire");
+			}
+
+			const instanceSuffix = `-${this.config.instanceId}`;
+			if (!payload.username.endsWith(instanceSuffix)) {
+				payload.username = `${payload.username}${instanceSuffix}`;
+			}
+
+			console.log(
+				`[${this.config.instanceId}] → register (username: ${payload.username}, empire: ${payload.empire})`,
+			);
+
+			this.waitingForRegistration = true;
+			this.registrationData = {
+				username: payload.username,
+				empire: payload.empire,
+			};
+
+			this.ws.send(command);
+			this.db.saveMessage(this.currentTick, "client", command);
+		} catch (error) {
+			console.error(`[${this.config.instanceId}] Registration prompt failed:`, error);
+			this.db.saveMessage(this.currentTick, "client", {
+				error: error instanceof Error ? error.message : "Registration prompt failed",
+				code: "REGISTRATION_PROMPT_FAILED",
+			});
+		}
 	}
 
 	private handleLoggedIn(_message: LoggedInMessage): void {}
 
 	private handleServerError(message: ErrorMessage): void {
 		if (this.waitingForRegistration && this.registrationData) {
-			console.log(`[${this.config.instanceId}] Registration failed, will retry on next tick`);
+			console.log(`[${this.config.instanceId}] Registration failed, retrying...`);
 			this.waitingForRegistration = false;
+			this.promptForRegistration().catch((error) => {
+				console.error(`[${this.config.instanceId}] Registration retry error:`, error);
+			});
 		}
 	}
 
@@ -310,7 +390,7 @@ JSON Format Rules:
 - Actions WITHOUT arguments: {"type": "action_name"}
 
 Examples:
-- {"type": "action_name"} ← Correct (no payload needed)
+- {"type": "action_name_without_arguments"} ← Correct (no payload needed)
 - {"type": "action_name_with_arguments", "payload": {"target_poi": "sol_belt"}} ← Correct
 
 NEVER write "undefined" or "null" as payload value. If an action has no arguments, omit the payload field entirely.
